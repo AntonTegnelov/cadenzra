@@ -119,14 +119,41 @@ def test_a_repeated_fifth_is_not_a_parallel() -> None:
 
 
 def test_a_sustained_clash_against_the_chord_is_flagged() -> None:
-    voices = _voices(soprano=[73], bass=[60])
+    """Eb held over a C major chord is a minor third against a major one —
+    the kind of bite no extension explains away."""
+    voices = _voices(soprano=[75], bass=[60])
 
     feedback = validate_section(voices, _section(), _skeleton("C"), _style())
 
     assert len(feedback) == 1
-    assert "C#5" in feedback[0].message
+    assert "D#5" in feedback[0].message
     assert "harmony is C" in feedback[0].message
     assert feedback[0].voice_id == "soprano"
+
+
+def test_ordinary_tensions_are_not_treated_as_wrong_notes() -> None:
+    """A ninth over a minor chord is colour, not error. docs/01 rules out a
+    general music-theory engine, so this check must not legislate taste under
+    the cover of arithmetic — it asks only whether the harmony explains the
+    pitch at all."""
+    ninth = _voices(soprano=[69], bass=[55])
+
+    assert validate_section(ninth, _section(), _skeleton("Gm"), _style()) == []
+
+
+def test_a_power_chord_lets_the_voices_supply_the_third() -> None:
+    """A chord that names no third is not clashing with the one a voice sings;
+    that is what the voice is for."""
+    third = _voices(soprano=[65], bass=[50])
+
+    assert validate_section(third, _section(), _skeleton("D5"), _style()) == []
+
+
+def test_a_strict_style_gets_the_narrow_reading() -> None:
+    strict = StylePack(dissonance_policy="strict consonance, no non-chord tones")
+    ninth = _voices(soprano=[69], bass=[55])
+
+    assert validate_section(ninth, _section(), _skeleton("Gm"), strict)
 
 
 def test_a_passing_tone_is_not_a_clash() -> None:

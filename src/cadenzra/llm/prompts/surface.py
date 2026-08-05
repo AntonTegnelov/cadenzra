@@ -21,6 +21,8 @@ from cadenzra.model.primitives.time import bar_beat_of
 from cadenzra.model.spec import VoiceSpec
 from cadenzra.model.structure import DynamicsPlan, SectionPlan
 from cadenzra.model.style import StylePack
+from cadenzra.notation.fragments import transposed_first_pitch
+from cadenzra.verification.transposition import UnknownRelationError, parse_relation
 
 
 def beat_text(beat: Fraction) -> str:
@@ -87,14 +89,60 @@ def rhythmic_cells_text(style: StylePack, meter: MeterSpec) -> str:
 
 
 def material_text(instruction: MaterialInstruction) -> str:
-    """A motif entry as an instruction to a player, with the notes in full."""
+    """A motif entry as an instruction to a player, with the notes in full.
+
+    Where the entry is transposed, the target starting pitch is computed and
+    named outright. Asking a model to work out "a fifth above d'" for itself
+    is arithmetic we can do exactly, and every note of the entry is verified
+    against that transposition — so the surface should hand over the answer
+    rather than the puzzle (docs/08, principle 2).
+    """
     entry, motif = instruction.entry, instruction.motif
-    relation = "" if entry.relation.lower() == "exact" else f", {entry.relation}"
+    lines = [
+        f"At bar {entry.bar}, enter with the {motif.role} ({motif.motif_id}).",
+        f"The {motif.role} is written as:",
+        f"  {motif.lily_music}",
+    ]
+    if motif.description:
+        lines.append(f"  ({motif.description})")
+
+    lines.append(_entry_instruction(instruction))
+    lines.append(
+        "Reproduce it note for note and rhythm for rhythm — this entry is checked "
+        "against the original, and every interval must match."
+    )
+    return "\n".join(lines)
+
+
+def _entry_instruction(instruction: MaterialInstruction) -> str:
+    """How to place the entry, in the most concrete terms available."""
+    entry, motif = instruction.entry, instruction.motif
+    try:
+        relation = parse_relation(entry.relation)
+    except UnknownRelationError:
+        return f"Enter it {entry.relation}."
+
+    if relation.kind == "exact":
+        return "Enter it at exactly this pitch."
+    if relation.kind == "inversion":
+        return (
+            "Enter it inverted: every interval keeps its size but changes "
+            "direction, so a rising third becomes a falling third."
+        )
+    if relation.kind == "tonal answer":
+        return (
+            "Enter it as a tonal answer at the fifth: transpose it up a fifth, "
+            "adjusting at most one note by a step to stay in the key."
+        )
+
+    target = transposed_first_pitch(motif.lily_music, relation.semitones)
+    direction = "up" if relation.semitones > 0 else "down"
+    if target is None:
+        return f"Transpose it {direction} ({entry.relation})."
     return (
-        f"At bar {entry.bar}, enter with the {motif.role} ({motif.motif_id}){relation}.\n"
-        f"The {motif.role} is:\n"
-        f"  {motif.lily_music}"
-        + (f"\n  ({motif.description})" if motif.description else "")
+        f"Transpose the whole {motif.role} {direction} ({entry.relation}), so it "
+        f"begins on {target.to_scientific()} — written {target.to_lilypond()} — "
+        "and every following interval is unchanged."
     )
 
 

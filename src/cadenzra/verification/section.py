@@ -19,7 +19,11 @@ from cadenzra.model.primitives.pitch import Pitch
 from cadenzra.model.primitives.time import bar_containing, format_bar_beat, offset_of
 from cadenzra.model.structure import SectionPlan
 from cadenzra.model.style import ParallelsPolicy, StylePack
-from cadenzra.notation.chords import ChordSymbolError, parse_chord_symbol
+from cadenzra.notation.chords import (
+    ChordSymbolError,
+    ParsedChord,
+    parse_chord_symbol,
+)
 from cadenzra.verification.midi_analysis import (
     TICK_TOLERANCE,
     NoteEvent,
@@ -43,6 +47,30 @@ _OCTAVE: Final = 12
 # line between the two, as a share of the harmonic event it sits in.
 _SUSTAINED_SHARE: Final = Fraction(1, 2)
 
+# Upper extensions above the root: ninths, elevenths and thirteenths, altered
+# and unaltered. A held A over a G minor chord is a ninth, not a wrong note.
+#
+# The width of this set is a deliberate position, not laziness. docs/01 lists
+# "a general music-theory engine" as a non-goal — validators check specific,
+# decidable properties and do not attempt to formalize good music. A narrow
+# reading of "non-chord tone" would have this check rejecting ninths, sharp
+# elevenths and modal colour, i.e. legislating taste under the cover of
+# arithmetic. What stays decidable, and stays worth checking, is whether a
+# sustained pitch is explainable by the declared harmony *at all*.
+# The ninth, eleventh, sharp eleventh, thirteenth and flat seventh: the tensions
+# a working musician adds without anyone calling it a wrong note. What stays
+# flagged is the genuinely biting material — a flat ninth, a minor third over a
+# major chord, a sharp fifth — held through half a chord.
+_EXTENSIONS: Final[tuple[int, ...]] = (2, 5, 6, 9, 10)
+
+# Chords that name no third leave it to the voices: F over D5 is what makes
+# the chord minor, not a clash with it.
+_THIRDS: Final[tuple[int, ...]] = (3, 4)
+_THIRDLESS_QUALITIES: Final[frozenset[str]] = frozenset({"5", "sus", "sus2", "sus4"})
+
+# The word a style pack uses when it wants the strict reading.
+_STRICT_MARKERS: Final[tuple[str, ...]] = ("strict", "consonant", "no non-chord")
+
 
 def validate_section(
     voices: dict[VoiceId, list[NoteEvent]],
@@ -59,7 +87,7 @@ def validate_section(
     """
     return [
         *_check_parallels(voices, section, style.parallel_fifths_policy),
-        *_check_harmonic_alignment(voices, section, skeleton),
+        *_check_harmonic_alignment(voices, section, skeleton, style.dissonance_policy),
         *_check_material_entries(voices, section, motif_notes or {}),
     ]
 
@@ -135,10 +163,34 @@ def _simultaneous_pairs(
     return pairs
 
 
+def _permitted_pitch_classes(chord: ParsedChord, strict: bool) -> frozenset[int]:
+    """What the harmony explains: its own tones, plus upper extensions.
+
+    Extensions are admitted by default because a ninth over a minor triad is
+    ordinary colour in most idioms, and a validator that called it a wrong note
+    would be enforcing a taste the style never asked for. A style pack that
+    says it wants strict consonance gets the narrow reading instead.
+    """
+    if strict:
+        return chord.pitch_classes
+    steps = list(_EXTENSIONS)
+    if chord.quality in _THIRDLESS_QUALITIES:
+        steps += list(_THIRDS)
+    return frozenset(chord.pitch_classes) | {
+        (chord.root_pc + step) % 12 for step in steps
+    }
+
+
+def _is_strict(policy: str) -> bool:
+    lowered = policy.lower()
+    return any(marker in lowered for marker in _STRICT_MARKERS)
+
+
 def _check_harmonic_alignment(
     voices: dict[VoiceId, list[NoteEvent]],
     section: SectionPlan,
     skeleton: HarmonicSkeleton,
+    dissonance_policy: str = "",
 ) -> list[FeedbackItem]:
     """Sounding pitches against the chord the skeleton declares.
 
@@ -146,6 +198,7 @@ def _check_harmonic_alignment(
     *and* are held, which is the decidable part of "does the music realize this
     harmony" (docs/05).
     """
+    strict = _is_strict(dissonance_policy)
     feedback = []
     for event in skeleton.events:
         try:
@@ -166,10 +219,11 @@ def _check_harmonic_alignment(
             continue
 
         threshold = event.duration * _SUSTAINED_SHARE
+        permitted = _permitted_pitch_classes(chord, strict)
         for voice_id, notes in sorted(voices.items()):
             for note in notes_sounding_at(notes, event.offset):
                 pitch = Pitch.from_midi_number(note.midi_pitch)
-                if chord.contains(pitch.pc12):
+                if pitch.pc12 in permitted:
                     continue
                 sounding = min(note.end, event.end) - max(note.onset, event.offset)
                 if sounding < threshold:

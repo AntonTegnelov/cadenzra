@@ -23,6 +23,7 @@ from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.spec import PieceSpec
 from cadenzra.model.structure import StructurePlan
 from cadenzra.notation.scaffold import scaffold_fragment
+from cadenzra.rendering.lilypond import first_error
 from cadenzra.verification.midi_analysis import extract_voice_notes
 from cadenzra.verification.transposition import UnknownRelationError, parse_relation
 
@@ -57,12 +58,16 @@ def validate_motifs(
             motif, meter, renderer, workdir / motif_id
         )
         if notes is None:
+            reason = first_error(compiler_output)
             feedback.append(
                 _item(
                     motif_id,
                     message=(
-                        f"the {motif.role} {motif_id!r} does not compile; check that "
-                        "every note has an explicit duration and every bar ends with |"
+                        f"the {motif.role} {motif_id!r} does not compile: "
+                        + (reason or "the compiler rejected it")
+                        + ". Write plain LilyPond: absolute pitch with Dutch note "
+                        "names (ees for E flat, fis for F sharp), an explicit "
+                        "duration on every note, and a bar check | at every barline"
                     ),
                     evidence=compiler_output,
                 )

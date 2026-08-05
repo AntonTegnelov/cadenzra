@@ -30,6 +30,10 @@ _DIAGNOSTIC = re.compile(
 )
 _BAR_CHECK = "bar check failed"
 
+_ERROR = re.compile(
+    r"^[^\n:]*:\d+:\d+: error: (?P<message>.*)$", re.MULTILINE
+)
+
 _VERSION = re.compile(r"GNU LilyPond (?P<version>\d+\.\d+)(?:\.\d+)?")
 
 
@@ -57,6 +61,19 @@ def parse_warnings(output: str) -> list[BarCheckWarning]:
 def parse_bar_check_warnings(output: str) -> list[BarCheckWarning]:
     """Just the bar-check failures — the meter validator's raw material."""
     return [w for w in parse_warnings(output) if _BAR_CHECK in w.message]
+
+
+def first_error(output: str) -> str | None:
+    """The compiler's own description of what went wrong.
+
+    Reported verbatim rather than paraphrased. A guessed diagnosis is worse
+    than none: telling a generator to "check durations and bar checks" when the
+    real fault was an unknown note name sends it looking in the wrong place,
+    and it will spend its whole budget there.
+    """
+    for match in _ERROR.finditer(output):
+        return str(match["message"]).strip()
+    return None
 
 
 class LilypondAdapter:

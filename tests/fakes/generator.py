@@ -24,6 +24,7 @@ class ScriptedGenerator:
         self,
         fragments: list[str] | None = None,
         *,
+        by_voice: dict[tuple[str, str], str] | None = None,
         style: StylePack | None = None,
         plans: list[StructurePlan] | None = None,
         motifs: list[MotifLibrary] | None = None,
@@ -31,6 +32,7 @@ class ScriptedGenerator:
         verdicts: list[ReviewVerdict] | None = None,
     ) -> None:
         self._fragments = list(fragments or [])
+        self._by_voice = dict(by_voice or {})
         self._style = style
         self._plans = list(plans or [])
         self._motifs = list(motifs or [])
@@ -67,10 +69,18 @@ class ScriptedGenerator:
 
     def generate_voice(self, ctx: VoiceContext) -> VoicePart:
         self.contexts.append(ctx)
+        key = (ctx.section.section_id, ctx.voice.voice_id)
+        # Keyed by (section, voice) rather than by call order: voices within a
+        # section are generated concurrently, so call order is not stable and a
+        # fragment-per-call script would make the test flaky.
+        if self._by_voice:
+            music = self._by_voice[key]
+        else:
+            music = _pick(self._fragments, len(self.contexts) - 1, what="fragment")
         return VoicePart(
             section_id=ctx.section.section_id,
             voice_id=ctx.voice.voice_id,
-            lily_music=_pick(self._fragments, len(self.contexts) - 1, what="fragment"),
+            lily_music=music,
         )
 
     def review(self, request: ReviewRequest) -> ReviewVerdict:

@@ -11,6 +11,7 @@ import logging
 import sys
 from pathlib import Path
 
+from cadenzra.app.compose import build_compose_services, compose
 from cadenzra.app.config import RunConfig
 from cadenzra.app.factory import build_generator, build_renderer
 from cadenzra.app.harness import compare, record, run_voice_trials
@@ -68,6 +69,11 @@ def main(argv: list[str] | None = None) -> int:
     layers.add_argument("--model", default=None)
     layers.add_argument("--workdir", type=Path, default=Path("out/layers"))
 
+    compose_cmd = commands.add_parser("compose", help="compose a piece end to end")
+    compose_cmd.add_argument("spec", choices=sorted(SPECS))
+    compose_cmd.add_argument("--model", default=None)
+    compose_cmd.add_argument("--out", type=Path, default=None)
+
     args = parser.parse_args(argv)
     try:
         return _run(args)
@@ -83,6 +89,8 @@ def _run(args: argparse.Namespace) -> int:
 
     if args.command == "layers":
         return _run_layers(config, args)
+    if args.command == "compose":
+        return _run_compose(config, args)
     if args.command != "harness":
         raise CadenzraError(f"unknown command {args.command!r}")
 
@@ -156,6 +164,37 @@ def _run_layers(config: RunConfig, args: argparse.Namespace) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(state.model_dump_json(indent=2), encoding="utf-8")
     print(f"\n  state written to {out}")
+    return 0
+
+
+def _run_compose(config: RunConfig, args: argparse.Namespace) -> int:
+    """Compose one piece and report where its artifacts landed."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    spec = SPECS[args.spec]
+    out = args.out or config.output_dir / args.spec
+    services = build_compose_services(config, out)
+
+    try:
+        state = compose(spec, services)
+    except CadenzraError as error:
+        print(f"cadenzra: {error}", file=sys.stderr)
+        print(f"cadenzra: partial artifacts written to {out}", file=sys.stderr)
+        return 1
+
+    artifacts = state.artifacts
+    assert artifacts is not None and state.structure is not None
+    print()
+    print(f"{spec.title} — {len(state.structure.sections)} sections, "
+          f"{len(state.voices)} parts")
+    for label, path in (
+        ("score", artifacts.lily_path),
+        ("pdf", artifacts.pdf_path),
+        ("score midi", artifacts.score_midi_path),
+        ("performance", artifacts.performance_midi_path),
+        ("audio", artifacts.audio_path),
+    ):
+        print(f"  {label:12} {path}")
     return 0
 
 

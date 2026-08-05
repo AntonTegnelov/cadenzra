@@ -32,6 +32,7 @@ from cadenzra.notation.scaffold import (
     count_bar_checks,
     scaffold_fragment,
 )
+from cadenzra.rendering.lilypond import first_error
 from cadenzra.verification.midi_analysis import extract_voice_notes
 
 SOURCE: Final = "validate_voice"
@@ -94,8 +95,11 @@ def validate_voice(
                 section,
                 message=(
                     f"the {part.voice_id} part for section {part.section_id} does not "
-                    "compile; check for an unclosed brace, an unknown command, or a "
-                    "malformed duration"
+                    "compile: "
+                    + (first_error(error.output) or "the compiler rejected it")
+                    + ". Write plain LilyPond: absolute pitch with Dutch note names "
+                    "(ees for E flat, fis for F sharp), an explicit duration on every "
+                    "note, and a bar check | at every barline"
                 ),
                 evidence=error.output,
             )

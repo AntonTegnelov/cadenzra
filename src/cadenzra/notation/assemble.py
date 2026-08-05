@@ -109,7 +109,9 @@ def _key_command(key: str) -> str:
     if not words:
         return ""
     try:
-        tonic = Pitch.from_scientific(f"{words[0].capitalize()}4").to_lilypond()
+        # `\key` takes a bare pitch name, with no octave mark: `\key d \minor`,
+        # never `\key d' \minor`.
+        tonic = Pitch.from_scientific(f"{words[0].capitalize()}3").to_lilypond()
     except ValueError:
         return ""
     modes = {
