@@ -188,7 +188,12 @@ def build_motif_prompt(
     if cells:
         blocks.append("Rhythmic cells of the style:\n" + cells)
     blocks.append(
-        "Typically one to four bars each. Absolute pitch with explicit octave marks "
+        "Keep each one short: one to four bars, at most twelve notes. Every return "
+        "of this material has to be written out exactly, and a long line is neither "
+        "reproducible nor recognizable when it comes back."
+    )
+    blocks.append(
+        "Absolute pitch with explicit octave marks "
         "(c' is middle C), Dutch note names as LilyPond reads them by default (ees "
         "for E flat, fis for F sharp — never eb or f#), an explicit duration on "
         "every note, a bar check | at the end of every bar, and no structural "

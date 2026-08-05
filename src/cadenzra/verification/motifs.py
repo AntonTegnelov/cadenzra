@@ -29,6 +29,16 @@ from cadenzra.verification.transposition import UnknownRelationError, parse_rela
 
 SOURCE: Final = "validate_motifs"
 
+# docs/04 says a motif is "typically 1-4 bars". That was guidance; it is now a
+# check, because motif length is what makes declared entries reproducible or
+# not. Every entry must be written out note for note and is verified as strict
+# interval equality, so a twenty-three-note subject asks a generator to
+# transcribe a long line exactly, several times, in different voices — and the
+# commission run showed it failing that and burning its whole budget on it. A
+# short subject is also better music: material has to be recognizable when it
+# returns, which is the entire reason it is in the piece.
+MAX_MOTIF_NOTES: Final = 12
+
 
 def validate_motifs(
     motifs: MotifLibrary,
@@ -76,6 +86,20 @@ def validate_motifs(
         if not notes:
             feedback.append(
                 _item(motif_id, message=f"the {motif.role} {motif_id!r} has no notes")
+            )
+            continue
+        if len(notes) > MAX_MOTIF_NOTES:
+            feedback.append(
+                _item(
+                    motif_id,
+                    message=(
+                        f"the {motif.role} {motif_id!r} is {len(notes)} notes long; "
+                        f"keep it to {MAX_MOTIF_NOTES} or fewer, a phrase of one to "
+                        "four bars. Every entry has to be written out exactly, and a "
+                        "long line is neither reproducible nor recognizable when it "
+                        "returns"
+                    ),
+                )
             )
             continue
         feedback += _check_range_under_relations(motif, notes, plan, spec)
