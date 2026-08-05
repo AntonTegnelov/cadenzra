@@ -51,3 +51,48 @@ about:
 
 The honest next measurement is the one that can fail: full sections under real
 harmonic and material constraints, which is what M3 and M4 exercise.
+
+## M5 — the audio critic confabulates when told what to expect (2026-08-05)
+
+docs/05 specifies that "the rendered audio plus the intent summary go to the
+audio critic". Measured against a real model, that instruction is actively
+harmful.
+
+**The experiment.** The smoke piece was rendered twice from the same score: once
+normally, and once with every note forced to a single velocity and no expression
+controller at all — an unambiguously mechanical performance, its RMS range
+collapsed from roughly 130:1 to 2:1. Each was played to `gemini-3.6-flash` under
+two briefs: the full one, carrying the intended dynamic arc, and a blinded one
+carrying only section labels, meters and voice names.
+
+| Audio | Brief | What the critic said about dynamics |
+|---|---|---|
+| mechanical | full | "the dynamic arc … realized with clarity and emotional weight" |
+| mechanical | blinded | *nothing* — described only meter and counterpoint |
+| shaped | full | "a compelling, luminous climax" |
+| shaped | blinded | "the central 5/4 section provides a dramatic dynamic climax" |
+
+Blinded, the critic **discriminates correctly**: it mentions dynamics when they
+are present and stays silent when they are not. Told the intended shape, it
+reports hearing that shape whether or not it is there. The failure is not a weak
+ear — it is the brief.
+
+**What changed.** Two things, and the docs/05 instruction is superseded by both:
+
+- `CritiqueBrief` now carries only what an observation needs in order to be
+  *localized* — section labels, meters, voice names — and withholds the intent,
+  style and dynamics arc the critic is supposed to be independently checking.
+- "Did the dynamic arc land?" moved out of the critic entirely and into
+  `verification/audio.py`, where it is decided by comparing the planned
+  controller range against the one the performance MIDI actually carries. This
+  follows docs/05's own first principle — prefer decidable checks over judgment
+  — and it catches the seeded-mechanical run cleanly (`0 of 96 controller
+  steps`) where the critic did not.
+
+The waveform is deliberately *not* the instrument for that check: a
+synthesizer's note attacks and releases alone produce a 3:1 swing, the same
+order as a real but modest crescendo, so any threshold over it either misses the
+failure or invents one. The controller curve answers the question exactly.
+
+**The general lesson**, worth carrying into any future critic prompt: an LLM
+judge given the answer key grades against the key, not the work.

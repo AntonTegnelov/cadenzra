@@ -34,9 +34,12 @@ from cadenzra.common.errors import (
     CadenzraError,
     LilypondCompileError,
 )
+from cadenzra.graph.routing import cheapest_level
+from cadenzra.interfaces.critique import AudioCritic, FeedbackRouter
 from cadenzra.interfaces.rendering import Synthesizer
 from cadenzra.model.artifacts import AssembledSection, RenderedArtifacts
 from cadenzra.model.contexts import MaterialInstruction, VoiceContext
+from cadenzra.model.critique import CritiqueBrief
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.interpretation import InterpretationParams
 from cadenzra.model.primitives.ids import MotifId, SectionId, VoiceId
@@ -48,6 +51,7 @@ from cadenzra.model.voice import VoicePart
 from cadenzra.notation.assemble import assemble_score, assemble_section
 from cadenzra.notation.scaffold import scaffold_fragment
 from cadenzra.performance.interpret import interpret_performance
+from cadenzra.verification.audio import validate_audio_dynamics
 from cadenzra.verification.midi_analysis import (
     NoteEvent,
     channel_track_invariant_ok,
@@ -69,6 +73,10 @@ class ComposeServices(LayerServices):
 
     synthesizer: Synthesizer
     output_dir: Path
+    # The critic is optional: a run without one still produces every artifact,
+    # it simply skips the listening pass.
+    critic: AudioCritic | None = None
+    router: FeedbackRouter | None = None
 
 
 def compose(spec: PieceSpec, services: ComposeServices) -> PipelineState:
@@ -82,6 +90,7 @@ def compose(spec: PieceSpec, services: ComposeServices) -> PipelineState:
         state = generate_voices(state, services)
         state = assemble_and_verify(state, services)
         state = render(state, services)
+        state = critique(state, services)
     except CadenzraError:
         _write_partials(state, services.output_dir)
         raise
@@ -414,6 +423,131 @@ def render(state: PipelineState, services: ComposeServices) -> PipelineState:
     )
 
 
+def critique(state: PipelineState, services: ComposeServices) -> PipelineState:
+    """Listen to the rendered performance and act on the cheapest thing heard.
+
+    The critique loop gets a stricter budget than the others because it is the
+    most expensive and least precise: its purpose is catching gross problems,
+    not converging on taste (docs/02). Interpretation adjustments get their own
+    budget because they are cheap — a re-render, not a regeneration — which is
+    exactly the trade the score/performance split was bought for.
+    """
+    if services.critic is None or services.router is None:
+        return state
+
+    plan = state.structure
+    assert plan is not None
+
+    for attempt in range(1, services.budgets.interpretation + 1):
+        artifacts = state.artifacts
+        assert artifacts is not None
+
+        # The decidable half first: whether the performance stage shaped the
+        # sound at all is a measurement, and measurements beat opinions.
+        measured = validate_audio_dynamics(
+            artifacts.audio_path, artifacts.performance_midi_path, plan
+        )
+
+        _log.info("listening to the performance")
+        verdict = services.critic.critique(artifacts.audio_path, _brief(state))
+        items = [*measured, *services.router.localize(verdict, plan)]
+        if verdict.acceptable and not items:
+            _log.info("the critic is satisfied")
+            return state.model_copy(update={"feedback": []})
+
+        level = cheapest_level(items)
+        _log.info("the critic raised %d point(s); cheapest target is %s", len(items), level)
+
+        if level not in ("render", "interpretation"):
+            # Anything costlier than a re-render means regenerating music that
+            # already passed every deterministic check, on the weakest evidence
+            # in the system. Recording it is the honest outcome: the run is
+            # complete, and a human can read what the critic thought.
+            _log.info("the remaining concerns need a human ear; recording them")
+            return state.model_copy(update={"feedback": items})
+
+        adjusted = adjust_interpretation(state, items)
+        if adjusted is None:
+            _log.info("no parameter change would address this; recording it")
+            return state.model_copy(update={"feedback": items})
+
+        _log.info("re-rendering with adjusted interpretation (%d/%d)",
+                  attempt, services.budgets.interpretation)
+        state = render(adjusted, services)
+
+    return state.model_copy(update={"feedback": []})
+
+
+def adjust_interpretation(
+    state: PipelineState, items: list[FeedbackItem]
+) -> PipelineState | None:
+    """Turn a performance complaint into a parameter change.
+
+    This is what the score/performance split is for: "sounds flat" becomes a
+    larger dynamics range, not a rewritten note (docs/02, docs/05). Returns
+    None when nothing here would move the knob, so the caller does not
+    re-render identically and call it progress.
+    """
+    current = state.interpretation or InterpretationParams()
+    text = " ".join(item.message.lower() for item in items)
+
+    intensity = current.dynamics_curve_intensity
+    if any(word in text for word in ("flat", "lifeless", "unvarying", "no dynamic")):
+        intensity = min(2.0, intensity * 1.5)
+    elif any(word in text for word in ("extreme", "too loud", "overpowering")):
+        intensity = max(0.25, intensity * 0.6)
+
+    if intensity == current.dynamics_curve_intensity:
+        return None
+
+    _log.info(
+        "adjusting the dynamics curve from %.2f to %.2f", 
+        current.dynamics_curve_intensity,
+        intensity,
+    )
+    return state.model_copy(
+        update={
+            "interpretation": current.model_copy(
+                update={"dynamics_curve_intensity": intensity}
+            )
+        }
+    )
+
+
+def _brief(state: PipelineState) -> CritiqueBrief:
+    """What the critic needs in order to *place* what it hears — and no more.
+
+    docs/05 says the intent summary goes to the critic alongside the audio.
+    Measured against a real model, that instruction is actively harmful: given
+    a performance rendered at one constant velocity with no expression at all,
+    a critic briefed on the intended arc reported hearing a "powerful ff
+    climax… realized with clarity", while the same critic given the same audio
+    and a brief with the intentions removed said nothing about dynamics and
+    described only the meter and counterpoint. Telling a listener what to
+    expect makes it report hearing that.
+
+    So the brief carries structural facts — the section labels, meters and
+    voice names an observation needs in order to be localizable — and withholds
+    the intentions the critic is supposed to be independently checking. The one
+    intent-versus-reality question that is decidable, whether the dynamic arc
+    landed, is answered by measuring the waveform instead
+    (`verification/audio.py`).
+    """
+    plan = state.structure
+    assert plan is not None
+    return CritiqueBrief(
+        title=state.spec.title,
+        intent="",
+        form_summary="",
+        sections=[
+            f"{section.section_id}: {section.bars} bars of "
+            f"{section.meter.surface_string()}"
+            for section in plan.sections
+        ],
+        voices=[voice.voice_id for voice in state.spec.voices],
+    )
+
+
 def _default_interpretation(state: PipelineState) -> InterpretationParams:
     """A style implies a groove; its defaults seed the performance stage."""
     assert state.style is not None
@@ -516,10 +650,18 @@ def _write_partials(state: PipelineState, output_dir: Path) -> None:
         )
 
 
-def build_compose_services(config: RunConfig, output_dir: Path) -> ComposeServices:
+def build_compose_services(
+    config: RunConfig, output_dir: Path, *, with_critic: bool = True
+) -> ComposeServices:
     """Wire a full run. The single composition point stays `app/factory.py`."""
-    from cadenzra.app.factory import build_generator, build_renderer, build_synthesizer
+    from cadenzra.app.factory import (
+        build_critic,
+        build_generator,
+        build_renderer,
+        build_synthesizer,
+    )
 
+    critic = build_critic(config) if with_critic else None
     return ComposeServices(
         generator=build_generator(config),
         renderer=build_renderer(config),
@@ -527,4 +669,6 @@ def build_compose_services(config: RunConfig, output_dir: Path) -> ComposeServic
         budgets=config.budgets,
         synthesizer=build_synthesizer(config),
         output_dir=output_dir,
+        critic=critic,
+        router=critic,
     )

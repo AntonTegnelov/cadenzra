@@ -290,3 +290,93 @@ def _rms_envelope(path: Path, *, slices: int) -> list[float]:
         )
         for index in range(slices)
     ]
+
+
+def test_a_flat_sounding_piece_is_fixed_by_a_knob_not_a_rewrite(
+    tmp_path: Path,
+) -> None:
+    """The M5 gate, and the clearest payoff of the score/performance split: a
+    complaint about how the piece *sounds* is resolved by re-rendering with
+    different interpretation parameters, without regenerating a single note
+    (docs/02, docs/05)."""
+    from cadenzra.model.critique import CritiqueVerdict, Observation
+    from tests.fakes.critic import ScriptedCritic
+
+    critic = ScriptedCritic(
+        [
+            CritiqueVerdict(
+                overall="the notes are right but it sounds flat",
+                acceptable=False,
+                observations=[
+                    Observation(concern="it sounds flat, the dynamics do not move")
+                ],
+            ),
+            CritiqueVerdict(overall="much better", acceptable=True),
+        ]
+    )
+    generator = ScriptedGenerator(
+        by_voice=FRAGMENTS,
+        style=StylePack(parallel_fifths_policy="allow"),
+        plans=[PLAN],
+        skeletons=list(_skeletons().values()),
+    )
+    services = ComposeServices(
+        generator=generator,
+        renderer=LilypondAdapter(),
+        workdir=tmp_path / "work",
+        budgets=RetryBudgets(),
+        synthesizer=FluidsynthAdapter(),
+        output_dir=tmp_path,
+        critic=critic,
+        router=critic,
+    )
+
+    state = compose(SPEC, services)
+
+    assert critic.calls == 2, "the critic should have been asked again after the fix"
+    assert state.feedback == [], "the second listen should have been satisfied"
+    assert state.interpretation is not None
+    assert state.interpretation.dynamics_curve_intensity > 1.0
+    # Exactly one generation per part: nothing was rewritten to fix the sound.
+    assert generator.calls == len(FRAGMENTS)
+
+
+def test_a_complaint_only_a_human_can_settle_is_recorded_not_acted_on(
+    tmp_path: Path,
+) -> None:
+    """A structural complaint means regenerating music that already passed
+    every deterministic check, on the weakest evidence in the system. The run
+    completes and the concern is written down."""
+    from cadenzra.model.critique import CritiqueVerdict, Observation
+    from tests.fakes.critic import ScriptedCritic
+
+    critic = ScriptedCritic(
+        [
+            CritiqueVerdict(
+                acceptable=False,
+                observations=[Observation(concern="the form goes nowhere")],
+            )
+        ]
+    )
+    generator = ScriptedGenerator(
+        by_voice=FRAGMENTS,
+        style=StylePack(parallel_fifths_policy="allow"),
+        plans=[PLAN],
+        skeletons=list(_skeletons().values()),
+    )
+    services = ComposeServices(
+        generator=generator,
+        renderer=LilypondAdapter(),
+        workdir=tmp_path / "work",
+        budgets=RetryBudgets(),
+        synthesizer=FluidsynthAdapter(),
+        output_dir=tmp_path,
+        critic=critic,
+        router=critic,
+    )
+
+    state = compose(SPEC, services)
+
+    assert state.artifacts is not None, "the run still finished"
+    assert [item.level for item in state.feedback] == ["structure"]
+    assert generator.calls == len(FRAGMENTS)

@@ -73,6 +73,9 @@ def main(argv: list[str] | None = None) -> int:
     compose_cmd.add_argument("spec", choices=sorted(SPECS))
     compose_cmd.add_argument("--model", default=None)
     compose_cmd.add_argument("--out", type=Path, default=None)
+    compose_cmd.add_argument(
+        "--no-critique", action="store_true", help="skip the audio listening pass"
+    )
 
     args = parser.parse_args(argv)
     try:
@@ -173,7 +176,9 @@ def _run_compose(config: RunConfig, args: argparse.Namespace) -> int:
 
     spec = SPECS[args.spec]
     out = args.out or config.output_dir / args.spec
-    services = build_compose_services(config, out)
+    services = build_compose_services(
+        config, out, with_critic=not args.no_critique
+    )
 
     try:
         state = compose(spec, services)
@@ -187,6 +192,11 @@ def _run_compose(config: RunConfig, args: argparse.Namespace) -> int:
     print()
     print(f"{spec.title} — {len(state.structure.sections)} sections, "
           f"{len(state.voices)} parts")
+    if state.feedback:
+        print("\n  the critic still had concerns:")
+        for item in state.feedback:
+            print(f"    [{item.level}] {item.message}")
+    print()
     for label, path in (
         ("score", artifacts.lily_path),
         ("pdf", artifacts.pdf_path),

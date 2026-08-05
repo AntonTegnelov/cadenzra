@@ -10,6 +10,7 @@ from pathlib import Path
 from cadenzra.app.config import RunConfig
 from cadenzra.graph.nodes import Services
 from cadenzra.llm.clients.gemini import GeminiClient
+from cadenzra.llm.services.gemini_critic import GeminiCritic
 from cadenzra.llm.services.gemini_generator import GeminiGenerator
 from cadenzra.rendering.fluidsynth import FluidsynthAdapter
 from cadenzra.rendering.lilypond import LilypondAdapter
@@ -23,6 +24,16 @@ def build_generator(config: RunConfig) -> GeminiGenerator:
             model=config.generation_model,
             attempts=config.llm_attempts,
         )
+    )
+
+
+def build_critic(config: RunConfig) -> GeminiCritic:
+    """The `AudioCritic`, which also backs `FeedbackRouter` (docs/06)."""
+    key = config.require_gemini_key()
+    return GeminiCritic(
+        GeminiClient(api_key=key, model=config.critic_model, attempts=config.llm_attempts),
+        api_key=key,
+        model=config.critic_model,
     )
 
 
