@@ -1,0 +1,11 @@
+{
+  "capability": "generate_voice",
+  "variant": "cells",
+  "model": "gemini-3.6-flash",
+  "meter": "5/4 (3+2)",
+  "trials": 10,
+  "pass_rate": 1.0,
+  "first_attempt_rate": 1.0,
+  "seconds": 185.9,
+  "failures": []
+}
