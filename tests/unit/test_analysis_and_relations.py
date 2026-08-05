@@ -365,3 +365,33 @@ def test_a_slash_chord_adds_its_bass() -> None:
 def test_an_unparseable_symbol_raises(symbol: str) -> None:
     with pytest.raises(ChordSymbolError):
         parse_chord_symbol(symbol)
+
+
+@pytest.mark.parametrize(
+    ("symbol", "expected"),
+    [
+        ("Dm(b9)", {2, 5, 9, 3}),
+        ("C7#11", {0, 4, 7, 10, 6}),
+        ("Cmaj7(9)", {0, 4, 7, 11, 2}),
+        ("Cadd9", {0, 2, 4, 7}),
+    ],
+)
+def test_altered_and_added_tones_widen_the_chord(symbol: str, expected: set[int]) -> None:
+    """Models reach for these constantly. Rejecting them costs a whole
+    regeneration round trip for a chord the checker could have understood, and
+    an added ninth only makes the alignment check *more* permissive — which is
+    the honest reading of what the symbol asked for."""
+    assert set(parse_chord_symbol(symbol).pitch_classes) == expected
+
+
+def test_a_quality_that_looks_like_an_alteration_is_not_taken_apart() -> None:
+    """`m7b5` is half-diminished, not a minor seventh with an added flat five."""
+    chord = parse_chord_symbol("Am7b5")
+
+    assert chord.quality == "m7b5"
+    assert set(chord.pitch_classes) == {9, 0, 3, 7}
+
+
+def test_a_genuinely_unknown_alteration_still_raises() -> None:
+    with pytest.raises(ChordSymbolError):
+        parse_chord_symbol("C(banana)")

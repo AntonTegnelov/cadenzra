@@ -9,6 +9,7 @@ into one method) invisible above the boundary (docs/06).
 from typing import Protocol
 
 from cadenzra.model.contexts import HarmonyContext, MotifContext, VoiceContext
+from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.motif import MotifLibrary
 from cadenzra.model.review import ReviewRequest, ReviewVerdict
@@ -23,7 +24,12 @@ class GeneratorLLM(Protocol):
 
     def derive_style_pack(self, spec: PieceSpec) -> StylePack: ...
 
-    def plan_structure(self, spec: PieceSpec, style: StylePack) -> StructurePlan: ...
+    def plan_structure(
+        self,
+        spec: PieceSpec,
+        style: StylePack,
+        feedback: list[FeedbackItem] | None = None,
+    ) -> StructurePlan: ...
 
     def generate_motifs(self, ctx: MotifContext) -> MotifLibrary: ...
 

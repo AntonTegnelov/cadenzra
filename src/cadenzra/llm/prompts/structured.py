@@ -14,9 +14,11 @@ from cadenzra.llm.prompts.surface import (
     chord_chart,
     dynamics_text,
     range_text,
+    rehearsal_notes,
     rhythmic_cells_text,
     section_text,
 )
+from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.motif import Motif
 from cadenzra.model.spec import PieceSpec
@@ -89,7 +91,9 @@ def build_style_prompt(spec: PieceSpec) -> str:
     return "\n\n".join(blocks)
 
 
-def build_plan_prompt(spec: PieceSpec, style: StylePack) -> str:
+def build_plan_prompt(
+    spec: PieceSpec, style: StylePack, feedback: list[FeedbackItem] | None = None
+) -> str:
     """The formal map. Bar counts are the planner's arithmetic to get right."""
     meters = ", ".join(meter.surface_string() for meter in spec.meters_allowed)
     voices = ", ".join(voice.voice_id for voice in spec.voices)
@@ -128,11 +132,18 @@ def build_plan_prompt(spec: PieceSpec, style: StylePack) -> str:
         "place each return in the sections that carry it. For a through-composed "
         "piece, leave both empty."
     )
+    notes = rehearsal_notes(feedback or [], what="plan")
+    if notes:
+        blocks.append(notes)
     return "\n\n".join(blocks)
 
 
 def build_motif_prompt(
-    briefs: list[MaterialBrief], spec: PieceSpec, style: StylePack, plan: StructurePlan
+    briefs: list[MaterialBrief],
+    spec: PieceSpec,
+    style: StylePack,
+    plan: StructurePlan,
+    feedback: list[FeedbackItem] | None = None,
 ) -> str:
     """Write the material every later entry derives from."""
     first = plan.sections[0]
@@ -181,6 +192,9 @@ def build_motif_prompt(
         "every note, a bar check | at the end of every bar, and no structural "
         "commands."
     )
+    notes = rehearsal_notes(feedback or [], what="material")
+    if notes:
+        blocks.append(notes)
     return "\n\n".join(blocks)
 
 
@@ -190,6 +204,7 @@ def build_harmony_prompt(
     motifs: list[Motif],
     previous_tail: HarmonicSkeleton | None,
     previous_section: SectionPlan | None,
+    feedback: list[FeedbackItem] | None = None,
 ) -> str:
     """One section's progression, with the previous section's tail as context.
 
@@ -233,4 +248,7 @@ def build_harmony_prompt(
         "exactly that, with no gaps and no overlaps."
     )
     blocks.append(f"Dynamics to support: {dynamics_text(section.dynamics)}.")
+    notes = rehearsal_notes(feedback or [], what="progression")
+    if notes:
+        blocks.append(notes)
     return "\n\n".join(blocks)

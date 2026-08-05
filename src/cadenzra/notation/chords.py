@@ -82,15 +82,43 @@ class ParsedChord(BaseModel, frozen=True):
         return pitch_class in self.pitch_classes
 
 
+# Alterations and added tones, as intervals above the root. Models reach for
+# these constantly ("Dm(b9)", "C7#11"), and rejecting them costs a whole
+# regeneration round trip for a chord the checker could simply have understood.
+_EXTENSIONS: Final[dict[str, int]] = {
+    "b9": 1,
+    "9": 2,
+    "#9": 3,
+    "b11": 4,
+    "11": 5,
+    "#11": 6,
+    "b13": 8,
+    "13": 9,
+    "b5": 6,
+    "#5": 8,
+    "b6": 8,
+    "6": 9,
+    "b7": 10,
+    "7": 10,
+    "maj7": 11,
+}
+_EXTENSION = re.compile(r"\((?P<inside>[^)]*)\)|add(?P<added>[b#]?\d+)")
+_BARE_ALTERATION = re.compile(r"(?P<alteration>[b#](?:5|6|9|11|13))$")
+
+
 def parse_chord_symbol(symbol: str) -> ParsedChord:
-    """Parse "Dm", "Esus4/B", "D5" into a pitch-class set."""
+    """Parse "Dm", "Esus4/B", "D5", "Dm(b9)" into a pitch-class set."""
     text = symbol.strip()
+    text, extensions = _split_extensions(text)
     match = _SYMBOL.match(text)
     if match is None:
         raise ChordSymbolError(f"{symbol!r} is not a chord symbol")
 
     root_pc = _root_pitch_class(match["root"])
     quality = match["quality"].strip()
+    if quality not in _QUALITY_INTERVALS:
+        quality, bare = _peel_alterations(quality)
+        extensions = [*extensions, *bare]
     if quality not in _QUALITY_INTERVALS:
         raise ChordSymbolError(
             f"{symbol!r} has unknown chord quality {quality!r}; known qualities are "
@@ -99,6 +127,7 @@ def parse_chord_symbol(symbol: str) -> ParsedChord:
 
     bass_pc = _root_pitch_class(match["bass"]) if match["bass"] else None
     pitch_classes = {(root_pc + step) % 12 for step in _QUALITY_INTERVALS[quality]}
+    pitch_classes |= {(root_pc + step) % 12 for step in extensions}
     if bass_pc is not None:
         pitch_classes.add(bass_pc)
 
@@ -109,6 +138,47 @@ def parse_chord_symbol(symbol: str) -> ParsedChord:
         bass_pc=bass_pc,
         pitch_classes=frozenset(pitch_classes),
     )
+
+
+def _split_extensions(text: str) -> tuple[str, list[int]]:
+    """Peel altered and added tones off a symbol, returning the plain chord.
+
+    Alterations widen the pitch-class set rather than replacing it: the
+    alignment check asks "is this note explained by the harmony", so an added
+    ninth makes the chord *more* permissive, which is the musically honest
+    reading of what the symbol was asking for.
+    """
+    steps: list[int] = []
+
+    def take(match: re.Match[str]) -> str:
+        raw = match["inside"] if match["inside"] is not None else match["added"]
+        for token in re.split(r"[,\s]+", raw or ""):
+            cleaned = token.strip().lower().replace("add", "")
+            if cleaned in _EXTENSIONS:
+                steps.append(_EXTENSIONS[cleaned])
+            elif cleaned:
+                raise ChordSymbolError(f"unknown chord alteration {token!r}")
+        return ""
+
+    return _EXTENSION.sub(take, text).strip(), steps
+
+
+def _peel_alterations(quality: str) -> tuple[str, list[int]]:
+    """Strip trailing alterations from a quality that is otherwise unknown.
+
+    Only reached when the quality does not already name a chord, so a genuine
+    quality that merely *looks* like an alteration — `m7b5` is half-diminished,
+    not a minor seventh with an added flat five — is never taken apart.
+    """
+    steps: list[int] = []
+    remaining = quality
+    while remaining not in _QUALITY_INTERVALS:
+        match = _BARE_ALTERATION.search(remaining)
+        if match is None:
+            return quality, []
+        steps.append(_EXTENSIONS[match["alteration"].lower()])
+        remaining = remaining[: match.start()] + remaining[match.end() :]
+    return remaining, steps
 
 
 def _root_pitch_class(name: str) -> int:

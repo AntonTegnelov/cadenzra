@@ -1,6 +1,7 @@
 """A `GeneratorLLM` that returns canned artifacts, in order."""
 
 from cadenzra.model.contexts import HarmonyContext, MotifContext, VoiceContext
+from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.motif import MotifLibrary
 from cadenzra.model.review import ReviewRequest, ReviewVerdict
@@ -47,7 +48,12 @@ class ScriptedGenerator:
         self.style_calls += 1
         return self._style if self._style is not None else StylePack()
 
-    def plan_structure(self, spec: PieceSpec, style: StylePack) -> StructurePlan:
+    def plan_structure(
+        self,
+        spec: PieceSpec,
+        style: StylePack,
+        feedback: list[FeedbackItem] | None = None,
+    ) -> StructurePlan:
         self.plan_calls += 1
         return _pick(self._plans, self.plan_calls - 1, what="plan")
 

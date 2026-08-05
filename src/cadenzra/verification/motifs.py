@@ -20,7 +20,6 @@ from cadenzra.interfaces.rendering import ScoreRenderer
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.motif import Motif, MotifLibrary
 from cadenzra.model.primitives.meter import MeterSpec
-from cadenzra.model.primitives.pitch import Pitch
 from cadenzra.model.spec import PieceSpec
 from cadenzra.model.structure import StructurePlan
 from cadenzra.notation.scaffold import scaffold_fragment
@@ -54,7 +53,9 @@ def validate_motifs(
 
     for motif_id, motif in sorted(motifs.motifs.items()):
         meter = _meter_for(motif_id, plan, spec)
-        notes = _compiled_pitches(motif, meter, renderer, workdir / motif_id)
+        notes, compiler_output = _compiled_pitches(
+            motif, meter, renderer, workdir / motif_id
+        )
         if notes is None:
             feedback.append(
                 _item(
@@ -63,6 +64,7 @@ def validate_motifs(
                         f"the {motif.role} {motif_id!r} does not compile; check that "
                         "every note has an explicit duration and every bar ends with |"
                     ),
+                    evidence=compiler_output,
                 )
             )
             continue
@@ -86,30 +88,47 @@ def _meter_for(motif_id: str, plan: StructurePlan, spec: PieceSpec) -> MeterSpec
 
 def _compiled_pitches(
     motif: Motif, meter: MeterSpec, renderer: ScoreRenderer, workdir: Path
-) -> list[int] | None:
-    """The motif's MIDI pitches, or None if it does not compile.
+) -> tuple[list[int] | None, str]:
+    """The motif's MIDI pitches and the compiler's output.
 
     A motif is checked the same way a voice fragment is — scaffolded, compiled,
     analyzed — because it is the same kind of artifact under the same contract.
+    The compiler output travels back with the verdict because it is the
+    evidence a regeneration prompt needs (docs/06).
     """
     scaffolded = scaffold_fragment(motif.lily_music, meter)
     try:
         result = renderer.compile(scaffolded.source, workdir)
-    except LilypondCompileError:
-        return None
+    except LilypondCompileError as error:
+        return None, error.output
     if result.midi_path is None:
-        return None
+        return None, result.raw_output
 
     pitches = []
     for notes in extract_voice_notes(mido.MidiFile(result.midi_path)).values():
         pitches += [note.midi_pitch for note in notes]
-    return sorted(pitches)
+    return sorted(pitches), result.raw_output
 
 
 def _check_range_under_relations(
     motif: Motif, pitches: list[int], plan: StructurePlan, spec: PieceSpec
 ) -> list[FeedbackItem]:
-    """Every voice that carries this motif must be able to sing every entry."""
+    """Every voice that carries this motif must be able to sing every entry.
+
+    Fit is judged **allowing octave displacement**, because that is how the
+    music works: a viola taking a subject "an octave down" plays it in the
+    viola's own octave, and any entry may be placed an octave away without
+    ceasing to be that subject. Judging the written pitch absolutely would
+    demand a single motif that literally fits every voice under every relation
+    at once — for a four-voice fugue spanning cello to violin that is often an
+    interval of a second, i.e. impossible, and the validator would be rejecting
+    correct music.
+
+    What survives the relaxation is the check that actually matters: whether
+    the subject's *span* fits inside the voice's range at all. A subject wider
+    than the voice can sing is unsingable in every octave, and that is a real
+    failure the fugue would otherwise carry to the end.
+    """
     lowest, highest = min(pitches), max(pitches)
     feedback = []
 
@@ -127,40 +146,29 @@ def _check_range_under_relations(
                 # would send the same problem to two nodes.
                 continue
 
-            shift = relation.semitones
-            low = Pitch.from_midi_number(lowest + shift)
-            high = Pitch.from_midi_number(highest + shift)
+            span = highest - lowest
+            voice_span_semitones = (
+                voice.range_high.cents - voice.range_low.cents
+            ) / 100
+            if span <= voice_span_semitones:
+                continue
 
-            if low.cents < voice.range_low.cents:
-                feedback.append(
-                    _item(
-                        motif.motif_id,
-                        section_id=section.section_id,
-                        voice_id=entry.voice_id,
-                        message=(
-                            f"the {entry.voice_id} entry at bar {entry.bar} of section "
-                            f"{section.section_id} ({relation.describe()}) would reach "
-                            f"{low.to_scientific()}, below the {entry.voice_id} floor of "
-                            f"{voice.range_low.to_scientific()}; write the {motif.role} "
-                            "higher or narrow its range"
-                        ),
-                    )
+            feedback.append(
+                _item(
+                    motif.motif_id,
+                    section_id=section.section_id,
+                    voice_id=entry.voice_id,
+                    message=(
+                        f"the {motif.role} spans {span} semitones, more than the "
+                        f"{entry.voice_id} range of "
+                        f"{voice.range_low.to_scientific()} to "
+                        f"{voice.range_high.to_scientific()}, so the entry at bar "
+                        f"{entry.bar} of section {section.section_id} "
+                        f"({relation.describe()}) cannot be sung in any octave; "
+                        f"narrow the {motif.role}"
+                    ),
                 )
-            if high.cents > voice.range_high.cents:
-                feedback.append(
-                    _item(
-                        motif.motif_id,
-                        section_id=section.section_id,
-                        voice_id=entry.voice_id,
-                        message=(
-                            f"the {entry.voice_id} entry at bar {entry.bar} of section "
-                            f"{section.section_id} ({relation.describe()}) would reach "
-                            f"{high.to_scientific()}, above the {entry.voice_id} ceiling "
-                            f"of {voice.range_high.to_scientific()}; write the "
-                            f"{motif.role} lower or narrow its range"
-                        ),
-                    )
-                )
+            )
     return feedback
 
 
@@ -170,6 +178,7 @@ def _item(
     message: str,
     section_id: str | None = None,
     voice_id: str | None = None,
+    evidence: str | None = None,
 ) -> FeedbackItem:
     return FeedbackItem(
         source=SOURCE,
@@ -177,5 +186,5 @@ def _item(
         section_id=section_id,
         voice_id=voice_id,
         message=message,
-        evidence=f"motif: {motif_id}",
+        evidence=evidence or f"motif: {motif_id}",
     )

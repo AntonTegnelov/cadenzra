@@ -273,3 +273,43 @@ def test_an_unknown_technique_raises_rather_than_being_dropped() -> None:
             section_id="A",
             voice_id="alto",
         )
+
+
+def test_every_regenerating_layer_shows_the_model_why_it_was_rejected() -> None:
+    """A regeneration that cannot see the rejection reason repeats the mistake,
+    slightly rephrased, until the budget runs out. This was a real bug: the
+    motif layer built its prompt without ever reading `MotifContext.feedback`,
+    so a subject too high for its answer stayed too high for three attempts."""
+    from cadenzra.llm.prompts.structured import (
+        build_harmony_prompt,
+        build_motif_prompt,
+        build_plan_prompt,
+    )
+    from cadenzra.model.feedback import FeedbackItem
+    from cadenzra.model.spec import PieceSpec
+    from cadenzra.model.structure import MaterialBrief, StructurePlan
+
+    note = FeedbackItem(
+        source="validate_motifs",
+        level="motif",
+        message="the cello entry at bar 13 would reach A4, above the cello ceiling of G4",
+    )
+    spec = PieceSpec(
+        title="T",
+        style_prompt="s",
+        voices=[ALTO],
+        meters_allowed=[SEVEN_EIGHT],
+        target_minutes=1.0,
+    )
+    plan = StructurePlan(sections=[SECTION])
+    briefs = [MaterialBrief(motif_id="subject", role="fugue subject", description="")]
+
+    prompts = [
+        build_plan_prompt(spec, STYLE, [note]),
+        build_motif_prompt(briefs, spec, STYLE, plan, [note]),
+        build_harmony_prompt(SECTION, STYLE, [], None, None, [note]),
+    ]
+
+    for prompt in prompts:
+        assert "above the cello ceiling of G4" in prompt
+        assert "as little else as possible" in prompt

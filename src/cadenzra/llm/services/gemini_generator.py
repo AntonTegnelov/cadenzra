@@ -36,6 +36,7 @@ from cadenzra.llm.schemas.structured import (
 )
 from cadenzra.llm.schemas.voice import write_part_schema
 from cadenzra.model.contexts import HarmonyContext, MotifContext, VoiceContext
+from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.motif import MotifLibrary
 from cadenzra.model.review import ReviewRequest, ReviewVerdict
@@ -61,10 +62,15 @@ class GeminiGenerator:
         )
         return parse_style_pack(payload, spec)
 
-    def plan_structure(self, spec: PieceSpec, style: StylePack) -> StructurePlan:
+    def plan_structure(
+        self,
+        spec: PieceSpec,
+        style: StylePack,
+        feedback: list[FeedbackItem] | None = None,
+    ) -> StructurePlan:
         payload = self._client.call_tool(
             system_prompt=PLAN_SYSTEM,
-            user_prompt=build_plan_prompt(spec, style),
+            user_prompt=build_plan_prompt(spec, style, feedback),
             tool=plan_structure_schema(
                 [meter.surface_string() for meter in spec.meters_allowed],
                 [voice.voice_id for voice in spec.voices],
@@ -76,7 +82,9 @@ class GeminiGenerator:
     def generate_motifs(self, ctx: MotifContext) -> MotifLibrary:
         payload = self._client.call_tool(
             system_prompt=MOTIF_SYSTEM,
-            user_prompt=build_motif_prompt(ctx.briefs, ctx.spec, ctx.style, ctx.plan),
+            user_prompt=build_motif_prompt(
+                ctx.briefs, ctx.spec, ctx.style, ctx.plan, ctx.feedback
+            ),
             tool=write_motifs_schema(),
         )
         return parse_motif_library(payload)
@@ -90,6 +98,7 @@ class GeminiGenerator:
                 ctx.motifs,
                 ctx.previous_skeleton,
                 ctx.previous_section,
+                ctx.feedback,
             ),
             tool=write_harmony_schema(ctx.section.bars),
         )

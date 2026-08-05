@@ -14,6 +14,7 @@ logic, is a review flag.
 from fractions import Fraction
 
 from cadenzra.model.contexts import MaterialInstruction
+from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.primitives.time import bar_beat_of
@@ -109,6 +110,22 @@ def section_text(section: SectionPlan) -> str:
     if section.intent:
         lines.append(f"Intent: {section.intent}")
     return "\n".join(lines)
+
+
+def rehearsal_notes(feedback: list[FeedbackItem], *, what: str) -> str:
+    """Validator feedback rendered as a rehearsal note.
+
+    Every regenerating layer needs this, not just voices: a regeneration that
+    cannot see why the last attempt was rejected will produce the same mistake
+    again, slightly rephrased, until the budget runs out (docs/04).
+    """
+    if not feedback:
+        return ""
+    notes = "\n".join(f"  - {item.message}" for item in feedback)
+    return (
+        f"Your previous {what} was rejected for these reasons. Fix them, changing "
+        f"as little else as possible:\n{notes}"
+    )
 
 
 def style_text(style: StylePack, meter: MeterSpec) -> str:
