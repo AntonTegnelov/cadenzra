@@ -73,11 +73,13 @@ def validate_motifs(
                 _item(
                     motif_id,
                     message=(
-                        f"the {motif.role} {motif_id!r} does not compile: "
-                        + (reason or "the compiler rejected it")
+                        f"the {motif.role} {motif_id!r} is not usable in "
+                        f"{meter.surface_string()}: "
+                        + (reason or "its bars do not fill the meter")
                         + ". Write plain LilyPond: absolute pitch with Dutch note "
                         "names (ees for E flat, fis for F sharp), an explicit "
-                        "duration on every note, and a bar check | at every barline"
+                        "duration on every note, a bar check | at every barline, and "
+                        f"every bar filling {meter.surface_string()} exactly"
                     ),
                     evidence=compiler_output,
                 )
@@ -131,6 +133,12 @@ def _compiled_pitches(
     except LilypondCompileError as error:
         return None, error.output
     if result.midi_path is None:
+        return None, result.raw_output
+    if result.bar_check_warnings:
+        # A motif whose bars do not fill the meter it will be sung in cannot be
+        # entered without either breaking its rhythm or breaking the bar. The
+        # voice validator has always treated this as a failure; this one was
+        # letting it through as a warning.
         return None, result.raw_output
 
     pitches = []

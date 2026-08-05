@@ -146,7 +146,7 @@ def build_motif_prompt(
     feedback: list[FeedbackItem] | None = None,
 ) -> str:
     """Write the material every later entry derives from."""
-    first = plan.sections[0]
+    first = _carrying_section(briefs, plan)
     blocks = [
         "Write the recurring material for this piece.",
         "\n".join(
@@ -203,6 +203,22 @@ def build_motif_prompt(
     if notes:
         blocks.append(notes)
     return "\n\n".join(blocks)
+
+
+def _carrying_section(briefs: list[MaterialBrief], plan: StructurePlan) -> SectionPlan:
+    """The section a motif is first *entered* in, not merely the first section.
+
+    Material is written in the meter it will be sung in. Writing it in the
+    opening section's meter instead produced a commission run where the riff
+    was two bars of 4/4 and every declared entry was in 7/8: its bars could not
+    fit, so no entry could both reproduce the rhythm and fill its bars, and the
+    cross-voice check rejected the piece however many times it was rewritten.
+    """
+    wanted = {brief.motif_id for brief in briefs}
+    for section in plan.sections:
+        if any(entry.motif_id in wanted for entry in section.material):
+            return section
+    return plan.sections[0]
 
 
 def build_harmony_prompt(
