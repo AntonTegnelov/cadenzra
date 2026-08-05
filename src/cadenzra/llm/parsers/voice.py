@@ -47,18 +47,27 @@ def parse_voice_part(
 
 
 def _normalize_lyrics(lyrics: str | None) -> str | None:
-    """Accept lyrics with or without their `\\lyricmode` wrapper.
+    """Accept lyrics with or without their `\\lyricmode` wrapper, and without
+    the barlines a model naturally copies across from the music.
 
-    Models supply one or the other depending on the day; the assembler needs
-    exactly one form. Normalizing here is what the surface being "forgiving,
-    strict underneath" means in practice (docs/03).
+    Two normalizations, both cases of the surface being forgiving while the
+    system stays strict underneath (docs/03).
+
+    The barline one is not cosmetic. `|` inside `\\lyricmode` is a bar check
+    like any other, and a model mirroring the music's barlines into its lyrics
+    writes ones that pass inside a single-section scaffold and then fail once
+    sections are concatenated and the lyric context's measure positions shift.
+    That produced a run where every part compiled alone and the assembled score
+    did not. Lyrics gain nothing from bar checks — note-to-syllable alignment is
+    what matters there, and the compiler reports that separately — so they are
+    removed rather than enforced.
     """
     if lyrics is None or not lyrics.strip():
         return None
-    text = lyrics.strip()
+    text = " ".join(lyrics.strip().replace("|", " ").split())
     if text.startswith("\\lyricmode"):
         return text
-    return f"\\lyricmode {{ {text.strip('{} ')} }}"
+    return f"\\lyricmode {{ {text.strip('{} ').strip()} }}"
 
 
 def _parse_techniques(raw: object, *, voice_id: VoiceId) -> list[TechniqueSpan]:

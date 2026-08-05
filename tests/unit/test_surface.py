@@ -313,3 +313,24 @@ def test_every_regenerating_layer_shows_the_model_why_it_was_rejected() -> None:
     for prompt in prompts:
         assert "above the cello ceiling of G4" in prompt
         assert "as little else as possible" in prompt
+
+
+def test_barlines_in_lyrics_are_removed_not_carried_through() -> None:
+    """A model mirroring the music's barlines into its lyrics writes bar checks
+    that pass inside a single-section scaffold and then fail once sections are
+    concatenated — that is a real run where every part compiled alone and the
+    assembled score did not. Lyrics gain nothing from bar checks."""
+    part = parse_voice_part(
+        {
+            "lily_music": "a'4 a' a' a' |",
+            "lily_lyrics": "Clang crush break the dark | Rise up sound the horn |",
+        },
+        section_id="A",
+        voice_id="bass",
+    )
+
+    assert part.lily_lyrics is not None
+    assert "|" not in part.lily_lyrics
+    assert "Clang crush break the dark Rise up sound the horn" in part.lily_lyrics
+    # The music's own bar checks are untouched: they are the meter validator.
+    assert part.lily_music.count("|") == 1
