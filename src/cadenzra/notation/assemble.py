@@ -57,31 +57,54 @@ def clef_for(voice: VoiceSpec) -> str:
     return "treble"
 
 
+def multi_measure_rest(section: SectionPlan) -> str:
+    """A silence exactly as long as the section, in its own meter.
+
+    `R1*7/8*16` is sixteen bars of 7/8. Spelling the bar length out is what
+    makes this work for any meter rather than only for those a whole note
+    divides evenly.
+    """
+    length = section.meter.bar_length
+    return f"R1*{length.numerator}/{length.denominator}*{section.bars}"
+
+
 def assemble_section(
     section: SectionPlan,
     parts: dict[VoiceId, VoicePart],
     spec: PieceSpec,
 ) -> AssembledSection:
-    """One section's voices, wrapped in the structure the fragments omit."""
-    order = [voice.voice_id for voice in spec.voices if voice.voice_id in parts]
+    """One section's music, with a variable for *every* voice in the piece.
+
+    A voice that does not sing here gets rests for the section's full length
+    rather than being left out. Skipping it makes its staff shorter than the
+    others, and from the next section onward its barlines sit at different
+    places than everybody else's — which shows up as a score that will not
+    compile even though every part compiled on its own. A silent voice in a
+    real score rests; so does this one.
+    """
+    singing = [voice.voice_id for voice in spec.voices if voice.voice_id in parts]
     blocks = []
-    for voice_id in order:
-        part = parts[voice_id]
+
+    for voice in spec.voices:
+        variable = variable_name(section.section_id, voice.voice_id)
+        part = parts.get(voice.voice_id)
+        music = _indent(part.lily_music) if part else f"{_INDENT}{multi_measure_rest(section)}"
         blocks.append(
-            f"{variable_name(section.section_id, voice_id)} = \\absolute {{\n"
+            f"{variable} = \\absolute {{\n"
             f"{_INDENT}{_section_header(section)}\n"
-            f"{_indent(part.lily_music)}\n"
+            f"{music}\n"
             "}"
         )
-        if part.lily_lyrics:
+        if part is not None and part.lily_lyrics:
             blocks.append(
-                f"{_lyrics_name(section.section_id, voice_id)} = {part.lily_lyrics}"
+                f"{_lyrics_name(section.section_id, voice.voice_id)} = "
+                f"{part.lily_lyrics}"
             )
 
     return AssembledSection(
         section_id=section.section_id,
         lily_source="\n\n".join(blocks),
-        voice_order=order,
+        voice_order=singing,
     )
 
 
@@ -139,10 +162,11 @@ def assemble_score(
 
     staves = []
     for voice in spec.voices:
+        # Every staff spans every section, so all voices stay barline-aligned.
         music = " ".join(
             f"\\{variable_name(section_id, voice.voice_id)}"
             for section_id in order
-            if voice.voice_id in sections.get(section_id, _EMPTY).voice_order
+            if section_id in sections
         )
         if not music:
             continue

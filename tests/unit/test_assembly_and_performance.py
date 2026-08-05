@@ -325,3 +325,58 @@ def test_the_curve_reaches_its_target_exactly_at_the_target_bar() -> None:
     assert points[-1].offset == Fraction(3)
     assert points[-1].value == DYNAMIC_LEVELS["ff"]
     assert all(point.value < DYNAMIC_LEVELS["ff"] for point in points[:-1])
+
+
+def test_a_voice_silent_in_a_section_rests_through_it() -> None:
+    """Skipping the voice instead makes its staff shorter than the others, and
+    from the next section onward its barlines sit somewhere different — a score
+    that will not compile even though every part compiled on its own. This was
+    a real failure on the commission piece, where the opening section had one
+    voice and the rest had four."""
+    soprano_only = {"soprano": PARTS["soprano"]}
+
+    section = assemble_section(SECTION, soprano_only, SPEC)
+
+    assert section.voice_order == ["soprano"], "only the soprano actually sings"
+    assert variable_name("A", "bass") in section.lily_source
+    assert "R1*7/8*2" in section.lily_source
+
+
+def test_every_staff_spans_every_section() -> None:
+    quiet_open = SECTION.model_copy(update={"section_id": "Intro"})
+    full = SECTION.model_copy(update={"section_id": "B"})
+    parts_b = {
+        voice_id: part.model_copy(update={"section_id": "B"})
+        for voice_id, part in PARTS.items()
+    }
+    sections = {
+        "Intro": assemble_section(quiet_open, {"soprano": PARTS["soprano"]}, SPEC),
+        "B": assemble_section(full, parts_b, SPEC),
+    }
+
+    score = assemble_score(StructurePlan(sections=[quiet_open, full]), sections, SPEC)
+
+    bass_line = next(
+        line for line in score.lily_source.split("\n") if '\\new Voice = "bass"' in line
+    )
+    assert variable_name("Intro", "bass") in bass_line
+    assert variable_name("B", "bass") in bass_line
+
+
+@pytest.mark.parametrize(
+    ("meter", "bars", "expected"),
+    [
+        (SEVEN_EIGHT, 16, "R1*7/8*16"),
+        (FOUR_FOUR, 4, "R1*1/1*4"),
+    ],
+)
+def test_a_silence_is_exactly_as_long_as_its_section(
+    meter: object, bars: int, expected: str
+) -> None:
+    """Spelling the bar length out is what makes this work for any meter, not
+    only those a whole note divides evenly."""
+    from cadenzra.notation.assemble import multi_measure_rest
+
+    section = SECTION.model_copy(update={"meter": meter, "bars": bars})
+
+    assert multi_measure_rest(section) == expected
