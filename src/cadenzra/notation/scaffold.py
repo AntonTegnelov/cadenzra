@@ -1,0 +1,158 @@
+"""Wrapping a bare fragment so the compiler can check it.
+
+Per-fragment validation compiles each voice inside a minimal scaffold — the
+section's meter, a single staff — so errors are caught while the blast radius
+is one voice, before assembly (docs/05).
+
+This module also owns the meter-to-LilyPond mapping, because the scaffolder and
+the assembler are the only things that write time signatures and the knowledge
+should exist once. Both forms below were confirmed against LilyPond 2.26:
+`\\time #'(2 2 3) 7/8` carries beat grouping directly, and `\\timeAbbrev` is
+what 2.26 calls the additive meter (`\\compoundMeter` was renamed away).
+"""
+
+from typing import Final
+
+from pydantic import BaseModel
+
+from cadenzra.model.primitives.meter import MeterSpec
+
+LILYPOND_VERSION: Final = "2.26.0"
+FRAGMENT_VOICE_NAME: Final = "fragment"
+
+
+def lily_time_command(meter: MeterSpec) -> str:
+    """The `\\time` or `\\timeAbbrev` that establishes a meter."""
+    if meter.is_additive:
+        terms = " ".join(f"({term.numerator} {term.denominator})" for term in meter.terms)
+        return f"\\timeAbbrev #'({terms})"
+    term = meter.terms[0]
+    if meter.grouping is None:
+        return f"\\time {term.numerator}/{term.denominator}"
+    grouping = " ".join(str(count) for count in meter.grouping)
+    return f"\\time #'({grouping}) {term.numerator}/{term.denominator}"
+
+
+class ScaffoldedSource(BaseModel, frozen=True):
+    """A compilable source, plus where the fragment sits inside it.
+
+    `first_fragment_line` lets a compiler warning at source line N be reported
+    as a position inside the fragment the generator actually wrote — which is
+    the only line number a regeneration prompt can act on.
+    """
+
+    source: str
+    first_fragment_line: int
+
+    def fragment_line_of(self, source_line: int) -> int:
+        """The 1-based line within the fragment for a source line."""
+        return source_line - self.first_fragment_line + 1
+
+
+def scaffold_fragment(
+    lily_music: str,
+    meter: MeterSpec,
+    *,
+    clef: str = "treble",
+    lily_lyrics: str | None = None,
+    midi_instrument: str = "choir aahs",
+    tempo_bpm: int = 96,
+) -> ScaffoldedSource:
+    """Wrap one voice's music expression in the smallest compilable score."""
+    header = [
+        f'\\version "{LILYPOND_VERSION}"',
+        "",
+        "\\score {",
+        "  <<",
+        f'    \\new Staff \\with {{ midiInstrument = "{midi_instrument}" }} {{',
+        f'      \\clef {clef}',
+        f'      \\new Voice = "{FRAGMENT_VOICE_NAME}" \\absolute {{',
+        f"        {lily_time_command(meter)}",
+    ]
+    fragment_lines = lily_music.strip("\n").split("\n")
+    footer = ["      }", "    }"]
+    if lily_lyrics is not None:
+        # `\lyricsto` takes a music block, so a bare `\lyricmode { ... }` — the
+        # form `VoicePart.lily_lyrics` carries — has to be wrapped in braces.
+        footer.append(
+            f'    \\new Lyrics \\lyricsto "{FRAGMENT_VOICE_NAME}" {{ {lily_lyrics} }}'
+        )
+    footer += [
+        "  >>",
+        "  \\layout {}",
+        "  \\midi {",
+        "    \\context {",
+        "      \\Score",
+        "      midiChannelMapping = #'staff",
+        "    }",
+        f"    \\tempo 4 = {tempo_bpm}",
+        "  }",
+        "}",
+        "",
+    ]
+
+    return ScaffoldedSource(
+        source="\n".join([*header, *fragment_lines, *footer]),
+        first_fragment_line=len(header) + 1,
+    )
+
+
+def bar_of_fragment_line(lily_music: str, line_in_fragment: int) -> int:
+    """The bar number a line of a fragment belongs to.
+
+    LilyPond reports warnings at a source line and column, never as a bar
+    number, so the bar has to be derived. It is derived by counting the bar
+    checks (`|`) that precede the position — which the fragment contract
+    requires at every barline (docs/03), and which is a token scan rather than
+    a duration parser. That distinction is the whole reason this is allowed to
+    touch LilyPond text at all (docs/05).
+    """
+    lines = lily_music.strip("\n").split("\n")
+    preceding = "\n".join(lines[: max(0, line_in_fragment - 1)])
+    return _count_bar_checks(preceding) + 1
+
+
+def bar_of_fragment_position(lily_music: str, line: int, column: int) -> int:
+    """As `bar_of_fragment_line`, but exact about position within the line.
+
+    `line` and `column` are 1-based, as LilyPond reports them. A bar check sits
+    at the *end* of its bar and the compiler points directly at it, so the
+    character at `column` is excluded from the count — a failure reported at a
+    barline belongs to the bar that barline closes, not the one after it.
+    """
+    lines = lily_music.strip("\n").split("\n")
+    if not 1 <= line <= len(lines):
+        return bar_of_fragment_line(lily_music, line)
+    before = "\n".join(lines[: line - 1])
+    if before:
+        before += "\n"
+    before += lines[line - 1][: max(0, column - 1)]
+    return _count_bar_checks(before) + 1
+
+
+def count_bar_checks(text: str) -> int:
+    """How many barlines a fragment declares — one per bar, per the contract."""
+    return _count_bar_checks(text)
+
+
+def _count_bar_checks(text: str) -> int:
+    """Bar checks in `text`, ignoring the `|` inside other constructs.
+
+    LilyPond writes repeat barlines as `\\bar "|:"` — inside a string — and
+    `||` in the same way, so counting only bare `|` tokens outside quotes is
+    enough. Nothing here interprets durations.
+    """
+    count = 0
+    in_string = False
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == '"':
+            in_string = not in_string
+        elif char == "|" and not in_string:
+            # `|` doubled (`||`) is one barline, not two.
+            count += 1
+            while index + 1 < len(text) and text[index + 1] == "|":
+                index += 1
+        index += 1
+    return count
