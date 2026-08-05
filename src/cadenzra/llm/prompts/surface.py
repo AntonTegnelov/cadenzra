@@ -108,8 +108,9 @@ def material_text(instruction: MaterialInstruction) -> str:
 
     lines.append(_entry_instruction(instruction))
     lines.append(
-        "Reproduce it note for note and rhythm for rhythm — this entry is checked "
-        "against the original, and every interval must match."
+        "Reproduce it note for note and rhythm for rhythm: this entry is checked "
+        "against the original, so every interval and every note value must match. "
+        "Write the entry first, then continue the line around it."
     )
     return "\n".join(lines)
 

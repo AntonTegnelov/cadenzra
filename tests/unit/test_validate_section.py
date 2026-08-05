@@ -280,3 +280,28 @@ def test_every_supported_relation_can_verify_a_correct_entry(relation: str) -> N
     )
 
     assert feedback == []
+
+
+def test_a_rhythm_mismatch_says_which_rhythm_is_needed() -> None:
+    """"Not its rhythm" is not actionable; naming the note values is. Same
+    reasoning as naming the target pitch of a transposed entry rather than
+    asking the model to work it out."""
+    midi = mido.MidiFile(ticks_per_beat=TICKS)
+    track = mido.MidiTrack()
+    track.name = "staff:soprano"
+    midi.tracks.append(track)
+    for pitch in SUBJECT_PITCHES:
+        track.append(mido.Message("note_on", channel=0, note=pitch, velocity=90, time=0))
+        track.append(mido.Message("note_off", channel=0, note=pitch, velocity=0, time=TICKS * 2))
+
+    feedback = validate_section(
+        extract_voice_notes(midi),
+        _with_entry("exact"),
+        NO_HARMONY,
+        _style(),
+        {"subject": _subject()},
+    )
+
+    assert len(feedback) == 1
+    assert "needs the durations 4 4 4 4" in feedback[0].message
+    assert "and has 2 2 2 2" in feedback[0].message

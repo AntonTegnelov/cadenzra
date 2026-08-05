@@ -327,11 +327,36 @@ def _check_material_entries(
                     location=start,
                     message=(
                         f"the {entry.voice_id} entry at bar {entry.bar} has the right "
-                        f"notes for {entry.motif_id} but not its rhythm"
+                        f"notes for {entry.motif_id} but not its rhythm: it needs the "
+                        f"durations {_durations_text(subject)}, and has "
+                        f"{_durations_text(candidate)}"
                     ),
                 )
             )
     return feedback
+
+
+def _durations_text(notes: list[NoteEvent]) -> str:
+    """Note values as a musician writes them, so feedback names the rhythm.
+
+    "Not its rhythm" is not actionable; "it needs 8 8 8 4. and has 4 4 8 8" is.
+    Same reasoning as naming the target pitch of a transposed entry rather than
+    asking the model to work it out.
+    """
+    return " ".join(_duration_name(note.duration) for note in notes) or "(nothing)"
+
+
+def _duration_name(duration: Fraction) -> str:
+    """A whole-note fraction as LilyPond spells it: 1, 2, 4., 8, 16."""
+    for dots, factor in ((0, Fraction(1)), (1, Fraction(3, 2)), (2, Fraction(7, 4))):
+        plain = duration / factor
+        if plain.numerator == 1 and _is_power_of_two(plain.denominator):
+            return f"{plain.denominator}{'.' * dots}"
+    return f"{duration.numerator}/{duration.denominator}"
+
+
+def _is_power_of_two(value: int) -> bool:
+    return value > 0 and not value & (value - 1)
 
 
 def _item(
