@@ -96,3 +96,50 @@ failure or invents one. The controller curve answers the question exactly.
 
 **The general lesson**, worth carrying into any future critic prompt: an LLM
 judge given the answer key grades against the key, not the work.
+
+## M6 — the commission (2026-08-05, gemini-3.6-flash)
+
+*Vessel*, the Tool-inspired SATB piece from docs/01, composed end to end.
+
+| | |
+|---|---|
+| Sections | 5 — 4/4, 7/8 (2+2+3), 5/4 (3+2), 7/8, 4/4 |
+| Voices | SATB, 20 parts (4 voices × 5 sections) |
+| Notes | 1,120 |
+| Duration | 3.11 minutes against a 3.0 target |
+| Declared motif entries | 2, both verified against the compiled score |
+| Audio dynamic range | 108:1 |
+
+Every machine-checkable criterion from docs/01 holds: the score compiles with
+zero errors and zero bar-check warnings, every bar satisfies its declared meter
+across three meters including two odd ones, every part stays inside its range,
+the one-voice-one-channel invariant survives to the compiled MIDI, the
+performance MIDI's notes are identical to the score's, and the audio swells
+108:1 across the arc. The audio critic, briefed blind, was satisfied.
+
+**Four defects only a piece this size could surface**, each fixed and each
+recorded in its own commit:
+
+1. **Barlines inside lyrics.** A model writing lyrics mirrors the music's `|`
+   into them, where they are also bar checks. They line up inside a
+   single-section scaffold and desync once sections are concatenated — sixteen
+   of them made a score that would not compile though every part had.
+2. **Silent voices were omitted, not rested.** *Vessel* opens with one voice
+   and fills to four. A voice left out of a section had a shorter staff than the
+   others, so from the next section on its barlines sat somewhere different.
+3. **Motifs written in the wrong meter.** The motif prompt used
+   `plan.sections[0]`'s meter; the planner had declared every entry elsewhere.
+   The riff came out as two bars of 4/4 with both entries in 7/8, so no entry
+   could both reproduce the rhythm and fill its bars — and the cross-voice check
+   was right to reject it every time. Compounding it, `validate_motifs` treated
+   bar-check warnings as warnings, which is how a 4/4 riff reached a 7/8 section
+   at all.
+4. **Unactionable feedback.** "The entry has the right notes but not its
+   rhythm" cannot be acted on. Naming both rhythms in note values —
+   "it needs 8 8 8 4. and has 4 4 8 8" — can.
+
+The pattern across all four: the failures were in *assembly and briefing*, not
+in generation. Every individual part passed its own validator every time; what
+broke was how the parts were combined and what the generators had been told. A
+smoke test cannot find those, which is the argument for the commission being a
+milestone rather than a demo.
