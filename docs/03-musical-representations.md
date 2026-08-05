@@ -31,7 +31,9 @@ class Pitch(BaseModel, frozen=True):
 
 Comparisons and range checks operate in cents. The ubiquitous 12-EDO view — pitch classes, semitone arithmetic, chord pitch-class sets — is a *derived view* of this type (`pitch.pc12`), not its definition. Surfaces use scientific ("G3") and LilyPond ("g") names, which parse into and print from `Pitch` losslessly for standard and quarter-tone alterations.
 
-This keeps microtonality from being foreclosed at the type level. What is *not* built: microtonal audio (tuning tables, MTS) and any prompt surface for microtones — capability-gated out unless a spec requests them (see [04](04-generation-layers.md) on gating). One empirical unknown is pinned to M0: whether LilyPond's MIDI backend renders quarter-tone accidentals as pitch bends reliably — verified against the real compiler, not assumed ([09](09-testing-and-milestones.md)).
+This keeps microtonality from being foreclosed at the type level. What is *not* built: microtonal audio (tuning tables, MTS) and any prompt surface for microtones — capability-gated out unless a spec requests them (see [04](04-generation-layers.md) on gating).
+
+**M0 empirical answer — quarter-tones do reach MIDI as pitch bends.** LilyPond 2.26 emits a `pitchwheel` of ±2048 immediately before a quarter-tone note and resets it to 0 after: against the default ±2-semitone bend range, that is exactly ±50 cents. The microtonal door therefore stays open through the ordinary per-channel bend mechanism — the same one glissandi would use — rather than needing tuning tables. Two consequences the design inherits: a note's sounding pitch in score MIDI is its number *plus* the active bend, so any future microtonal analysis must read bend state (`NoteEvent` carries a `bend` field for this); and because bends are per channel, a *polyphonic* microtonal voice would need channel splitting, the same known ceiling the one-voice-one-channel invariant already has. Pinned by `test_quarter_tones_reach_midi_as_pitch_bends`.
 
 ### Meter
 
@@ -45,7 +47,9 @@ class MeterSpec(BaseModel, frozen=True):
     grouping: list[int] | None  # beat grouping in shortest-term units, e.g. [2,2,3] for 7/8
 ```
 
-Bar length is the exact `Fraction` sum of terms. The surface renders this as musicians write it: "7/8 (2+2+3)", "3/4+1/8". Assemblers map it to `\time` or `\compoundMeter` and `\set Timing.beatStructure`.
+Bar length is the exact `Fraction` sum of terms. The surface renders this as musicians write it: "7/8 (2+2+3)", "3/4+1/8".
+
+**Assembler mapping, corrected against LilyPond 2.26.** A single term with a grouping is `\time #'(2 2 3) 7/8` — 2.26 carries the beat structure in `\time` itself, so the separate `\set Timing.beatStructure` this doc originally specified is unnecessary. Additive meters are `\timeAbbrev #'((3 4) (1 8))`: `\compoundMeter` was **renamed to `\timeAbbrev`** and no longer exists under the old name, so the original instruction would not have compiled. Both forms are exercised by `tests/fixtures/lily/satb_7_8_valid.ly`.
 
 ## `PieceSpec` — user intent
 
@@ -193,7 +197,9 @@ These conventions exist because each one converts a common LLM failure into a ma
 
 `assemble_section` and `assemble_score` are pure functions that wrap fragments in deterministic scaffolding: voice variables (`musicA1Soprano`), staves and staff groups from `PieceSpec.voices`, `\time`/`\compoundMeter`/`\tempo`/`\key` from the plan, `\midi {}` and `\layout {}` blocks.
 
-**Hard invariant: one voice = one MIDI track = one MIDI channel.** The analysis validators key on it, and every per-channel MIDI mechanism the performance stage uses — pitch bend for glissandi and (if verified viable) microtones, per-voice CC dynamics, per-voice timing offsets — is only possible because of it. The assembler owns this invariant; breaking it breaks two subsystems at once. (Its known ceiling: *polyphonic* continuous pitch within one voice, e.g. divisi glissando, would need channel splitting — a contained future exactly because the invariant is explicit.)
+**Hard invariant: one voice = one MIDI track = one MIDI channel.** The analysis validators key on it, and every per-channel MIDI mechanism the performance stage uses — pitch bend for glissandi and microtones, per-voice CC dynamics, per-voice timing offsets — is only possible because of it. The assembler owns this invariant; breaking it breaks two subsystems at once. (Its known ceiling: *polyphonic* continuous pitch within one voice, e.g. divisi glissando, would need channel splitting — a contained future exactly because the invariant is explicit.)
+
+**M0 empirical answer — the invariant holds, and here is the recipe.** Wrapping each staff's music in `\new Voice = "<voice_id>"` and setting `midiChannelMapping = #'staff` in the `\midi` block gives every voice its own track on its own channel. Two details the analysis path depends on: LilyPond names each track `<staff>:<voice_id>`, so **the voice id is recoverable from the track name** — the reliable key, rather than channel order; and channels are **distinct but not contiguous** (SATB with lyrics yields 0, 2, 3, 4, because a `Lyrics` context consumes a channel number), so nothing may assume `0..n-1`. The mapping happens to be the 2.26 default, but the assembler sets it explicitly so the invariant is declared rather than inherited. Pinned by `test_one_voice_is_one_track_on_one_channel` and `test_voice_channels_are_distinct_but_not_contiguous`.
 
 ## `InterpretationParams` — the performance domain's knobs
 
@@ -206,6 +212,8 @@ class InterpretationParams(BaseModel):
 ```
 
 Read by `interpret_performance` (score MIDI in, performance MIDI out — pure given its inputs). Defaults come from `StylePack.interpretation_defaults`; the critique loop may adjust them, which is why they live in pipeline state. v1 implements `DynamicsPlan`→CC curves fully (hairpins on held chords are inaudible without it) and identity for the rest; swing, offsets, bend synthesis, and technique mappings fill in behind the same seam as needs demonstrate.
+
+**M0 empirical answer — the SoundFont honors CC11.** FluidR3_GM under FluidSynth 2.5.7 renders a held note at expression 127 with roughly 40× the RMS amplitude of the same note at expression 20, so the dynamics-curve mechanism the whole score/performance split is justified by does work end to end. This check was pulled forward from the performance milestone deliberately: a SoundFont that ignored expression would have invalidated a design commitment while failing silently — the audio would simply have been flat. Pinned by `test_the_soundfont_actually_responds_to_expression`.
 
 ## `RenderedArtifacts`
 

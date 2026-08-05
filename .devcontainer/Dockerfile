@@ -14,7 +14,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg xz-utils \
-        git build-essential \
+        git gh build-essential \
         ripgrep fd-find less vim \
         openssh-server sudo \
         locales tini fontconfig \
@@ -23,6 +23,35 @@ RUN apt-get update \
 
 # fd is installed as `fdfind` on Debian; provide the conventional `fd` alias.
 RUN ln -s /usr/bin/fdfind /usr/local/bin/fd
+
+# ---- Music toolchain --------------------------------------------------------
+# Debian bookworm ships LilyPond 2.24 and FluidSynth 2.3; both are pinned to
+# current stable here instead. The LilyPond error-message format is parsed by
+# rendering/lilypond.py, so its version is asserted at startup — bumping this
+# ARG means regenerating the captured-stderr fixtures (docs/09).
+ARG LILYPOND_VERSION=2.26.0
+ARG FLUIDSYNTH_VERSION=2.5.7
+
+RUN curl -fsSL -o /tmp/lilypond.tar.gz \
+        "https://gitlab.com/lilypond/lilypond/-/releases/v${LILYPOND_VERSION}/downloads/lilypond-${LILYPOND_VERSION}-linux-x86_64.tar.gz" \
+ && tar xzf /tmp/lilypond.tar.gz -C /opt \
+ && ln -s "/opt/lilypond-${LILYPOND_VERSION}/bin/lilypond" /usr/local/bin/lilypond \
+ && rm /tmp/lilypond.tar.gz
+
+# FluidSynth is built from source; libsndfile is what enables `-F` WAV
+# rendering, which is the only mode the pipeline uses.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        cmake libglib2.0-dev libsndfile1-dev fluid-soundfont-gm \
+ && curl -fsSL -o /tmp/fluidsynth.tar.gz \
+        "https://github.com/FluidSynth/fluidsynth/archive/refs/tags/v${FLUIDSYNTH_VERSION}.tar.gz" \
+ && tar xzf /tmp/fluidsynth.tar.gz -C /tmp \
+ && cmake -S "/tmp/fluidsynth-${FLUIDSYNTH_VERSION}" -B /tmp/fluidsynth-build \
+        -DCMAKE_BUILD_TYPE=Release -Denable-readline=off \
+ && cmake --build /tmp/fluidsynth-build -j"$(nproc)" \
+ && cmake --install /tmp/fluidsynth-build \
+ && ldconfig \
+ && rm -rf /tmp/fluidsynth* /var/lib/apt/lists/*
 
 # ---- Node.js (NodeSource) + Claude Code -------------------------------------
 RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \

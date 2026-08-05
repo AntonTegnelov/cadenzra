@@ -1,0 +1,6 @@
+Processing `syntax.ly'
+Parsing...
+syntax.ly:2:44: error: syntax error, unexpected end of input
+\score { \new Staff \absolute { c4 d4 e4 f4
+                                            
+fatal error: failed files: "syntax.ly"
