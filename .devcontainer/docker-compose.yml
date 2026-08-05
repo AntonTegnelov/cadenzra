@@ -1,0 +1,26 @@
+name: cadenzra
+
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    image: cadenzra-dev:latest
+    container_name: cadenzra
+    hostname: cadenzra
+    ports:
+      - "2227:22"
+    volumes:
+      - ..:/workspaces/cadenzra:cached
+      - ${USERPROFILE}/.ssh/authorized_keys:/tmp/host_authorized_keys:ro
+      # Whole home on a volume: git config, PAT credentials, Claude login,
+      # venv, and shell history all survive container recreates.
+      - home:/home/dev
+      # Stable sshd host-key fingerprint across down/up cycles.
+      - ssh-host-keys:/etc/ssh/keys
+    restart: unless-stopped
+    init: true
+
+volumes:
+  ssh-host-keys:
+  home:

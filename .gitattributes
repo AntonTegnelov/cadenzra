@@ -1,0 +1,8 @@
+# Normalize all text files to LF in the repo and the working tree; the dev
+# container is Linux, and CRLF written by Windows-side editors caused constant
+# phantom "modified" churn in git status.
+* text=auto eol=lf
+
+# LF for devcontainer assets so scripts/config parse inside the Linux container.
+.devcontainer/** text eol=lf
+*.sh text eol=lf

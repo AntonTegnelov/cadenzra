@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.schema.json",
+  "name": "cadenzra",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "dev",
+  "workspaceFolder": "/workspaces/cadenzra",
+  "remoteUser": "dev",
+
+  // Keep the sshd entrypoint running so SSH access works while VS Code is
+  // attached via the Dev Containers extension.
+  "overrideCommand": false,
+
+  // NOTE: no "forwardPorts" here. Zed's dev container support translates it
+  // into an extra docker-published host port, which collides with the compose
+  // file's 2227:22 mapping and makes the container fail to start.
+
+  "postCreateCommand": "uv sync",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        // The repo's .venv is Windows-native; force the container venv.
+        "python.defaultInterpreterPath": "/home/dev/.venv/bin/python"
+      },
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "anthropic.claude-code"
+      ]
+    }
+  }
+}
