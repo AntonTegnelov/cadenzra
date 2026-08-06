@@ -99,3 +99,15 @@ def test_a_call_to_a_different_tool_does_not_count() -> None:
 
     with pytest.raises(LLMOutputError):
         _extract(response, "write_part")
+
+
+def test_a_rate_limit_is_recognized_as_worth_waiting_for() -> None:
+    """Not a bad answer — "not yet". Retrying three times in a second spends
+    the whole budget before the window moves, which is how a ten-minute piece
+    dies halfway through on a quota that would have cleared."""
+    from cadenzra.llm.clients.gemini import _is_rate_limited
+
+    assert _is_rate_limited(Exception("429 RESOURCE_EXHAUSTED. {'error': ...}"))
+    assert _is_rate_limited(Exception("503 UNAVAILABLE"))
+    assert not _is_rate_limited(Exception("400 INVALID_ARGUMENT"))
+    assert not _is_rate_limited(LLMOutputError("the model answered without calling x"))

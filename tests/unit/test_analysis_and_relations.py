@@ -395,3 +395,17 @@ def test_a_quality_that_looks_like_an_alteration_is_not_taken_apart() -> None:
 def test_a_genuinely_unknown_alteration_still_raises() -> None:
     with pytest.raises(ChordSymbolError):
         parse_chord_symbol("C(banana)")
+
+
+def test_suspended_and_extended_qualities_the_probe_pieces_asked_for() -> None:
+    """A late-Romantic orchestral run wrote Bb9sus4 and the parser had never
+    heard of it, which bounced a whole section's harmony."""
+    assert parse_chord_symbol("Bb9sus4").pitch_classes == frozenset({10, 0, 3, 5, 8})
+    assert parse_chord_symbol("G7sus2").pitch_classes == frozenset({7, 9, 2, 5})
+    assert parse_chord_symbol("Am11").pitch_classes == frozenset({9, 11, 0, 2, 4, 7})
+
+
+def test_a_slash_is_always_a_bass_note() -> None:
+    """Which is why there is no 6/9: it cannot be told apart from a C6 over a
+    bass, so the spelling would be an entry nothing could reach."""
+    assert parse_chord_symbol("Bb/D").bass_pc == 2

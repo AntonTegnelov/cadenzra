@@ -32,8 +32,10 @@ Write the music by calling the `write_part` tool. Never reply with prose."""
 _CONTRACT = """\
 Write the part under these conventions:
   - Absolute pitch with explicit octave marks (c' is middle C). Never \\relative.
-  - Dutch note names, which is what LilyPond reads by default: ees for E flat, \
-aes for A flat, fis for F sharp, cis for C sharp. Never eb, bb, f#.
+  - Dutch note names, which is what LilyPond reads by default. The rule is \
+regular and covers every letter: a flat adds -es and a sharp adds -is — ces \
+des ees fes ges aes bes, and cis dis eis fis gis ais bis. Never eb, bb, cb, \
+f#, or gbes.
   - An explicit duration on every note (c'8 c'8, not c'8 c').
   - A bar check | at the end of every bar, including the last.
   - Notes, rests, durations, ties, slurs, dynamics, hairpins and markup only. \

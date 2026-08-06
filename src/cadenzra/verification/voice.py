@@ -98,7 +98,9 @@ def validate_voice(
                     "compile: "
                     + (first_error(error.output) or "the compiler rejected it")
                     + ". Write plain LilyPond: absolute pitch with Dutch note names "
-                    "(ees for E flat, fis for F sharp), an explicit duration on every "
+                    "— a flat adds -es and a sharp adds -is on every letter "
+                    "(ces des ees fes ges aes bes, cis dis eis fis gis ais bis), "
+                    "never cb or eb or f#. An explicit duration on every "
                     "note, and a bar check | at every barline"
                 ),
                 evidence=error.output,

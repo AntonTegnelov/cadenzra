@@ -145,6 +145,11 @@ def tokenize_line(text: str) -> LyricLine:
     cleaned = text.replace("|", " ").strip()
     if cleaned.startswith("\\lyricmode"):
         cleaned = cleaned[len("\\lyricmode") :].strip().strip("{}").strip()
+    # `i--ron` and `i -- ron` mean the same thing to a writer, and only the
+    # second is a hyphen to LilyPond. Splitting on whitespace alone made the
+    # first a single syllable named "i--ron", which then compared unequal to
+    # the same words spaced properly — a refrain failed on hyphen spacing.
+    cleaned = cleaned.replace("--", " -- ").replace("__", " __ ")
     return LyricLine(tokens=cleaned.split())
 
 

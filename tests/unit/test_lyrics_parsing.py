@@ -192,3 +192,22 @@ def test_observations_survive_a_loose_device_name() -> None:
 def test_no_observations_is_a_fine_answer() -> None:
     assert parse_device_observations({"observations": []}) == []
     assert parse_device_observations({}) == []
+
+
+def test_hyphens_without_spaces_are_still_hyphens() -> None:
+    """A writer types `i--ron` as readily as `i -- ron`, and only the second is
+    a hyphen to LilyPond. Splitting on whitespace alone made the first one
+    syllable named "i--ron" — which then compared unequal to the same words
+    spaced properly, and failed a refrain on hyphen spacing alone."""
+    tight = tokenize_line("i--ron de--sign")
+    spaced = tokenize_line("i -- ron de -- sign")
+
+    assert tight.tokens == spaced.tokens
+    assert tight.words == ["iron", "design"]
+    assert tight.syllable_count == 4
+    assert render_lyricmode([tight]) == "\\lyricmode { i -- ron de -- sign }"
+
+
+def test_melisma_extenders_are_normalized_the_same_way() -> None:
+    assert tokenize_line("light__ falls").tokens == ["light", "__", "falls"]
+    assert tokenize_line("light __ falls").tokens == ["light", "__", "falls"]

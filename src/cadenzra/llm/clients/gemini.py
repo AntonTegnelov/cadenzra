@@ -40,6 +40,7 @@ class GeminiClient:
         temperature: float | None = None,
         runlog: RunLog | None = None,
         include_thoughts: bool = False,
+        backoff_s: float = 20.0,
     ) -> None:
         self._client = genai.Client(api_key=api_key)
         self._model = model
@@ -47,6 +48,7 @@ class GeminiClient:
         self._temperature = temperature
         self._runlog = runlog
         self._include_thoughts = include_thoughts
+        self._backoff_s = backoff_s
 
     def call_tool_with_audio(
         self,
@@ -141,6 +143,14 @@ class GeminiClient:
                     self._attempts,
                     error,
                 )
+                # A rate limit is not a bad answer, it is "not yet". Retrying
+                # three times in a second spends the whole budget before the
+                # window has moved, which is how a ten-minute piece dies
+                # halfway through on a quota that would have cleared.
+                if attempt < self._attempts and _is_rate_limited(error):
+                    delay = self._backoff_s * (2 ** (attempt - 1))
+                    _log.warning("rate limited; waiting %.0fs", delay)
+                    time.sleep(delay)
             else:
                 self._record(
                     turn=turn,
@@ -214,6 +224,19 @@ _MIME_TYPES: Final[dict[str, str]] = {
     ".flac": "audio/flac",
     ".ogg": "audio/ogg",
 }
+
+
+_RATE_LIMITED: Final = ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE")
+
+
+def _is_rate_limited(error: Exception) -> bool:
+    """Whether waiting is likely to help.
+
+    Matched on the message rather than an exception type: the SDK raises its
+    own error classes and the status is what is stable across versions.
+    """
+    text = str(error)
+    return any(marker in text for marker in _RATE_LIMITED)
 
 
 def _mime_type_of(audio: Path) -> str:

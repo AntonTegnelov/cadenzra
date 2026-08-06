@@ -53,6 +53,18 @@ _QUALITY_INTERVALS: Final[dict[str, tuple[int, ...]]] = {
     "dim7": (0, 3, 6, 9),
     "o7": (0, 3, 6, 9),
     "7sus4": (0, 5, 7, 10),
+    "7sus2": (0, 2, 7, 10),
+    # A ninth over a suspension: the third stays away, the ninth and the
+    # seventh come in. Real vocabulary in late-Romantic and pop writing, and
+    # the orchestral probe asked for one.
+    "9sus4": (0, 2, 5, 7, 10),
+    "9sus": (0, 2, 5, 7, 10),
+    "sus4add9": (0, 2, 5, 7),
+    "m11": (0, 2, 3, 5, 7, 10),
+    "m13": (0, 2, 3, 7, 9, 10),
+    # No "6/9": the slash is bass notation here, so C6/9 reads as a C6 over a
+    # ninth-that-is-not-a-note. Unreachable spellings are dead entries.
+    "maj13": (0, 2, 4, 7, 9, 11),
     "add9": (0, 2, 4, 7),
     "madd9": (0, 2, 3, 7),
     "9": (0, 2, 4, 7, 10),

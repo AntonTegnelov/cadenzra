@@ -77,7 +77,9 @@ def validate_motifs(
                         f"{meter.surface_string()}: "
                         + (reason or "its bars do not fill the meter")
                         + ". Write plain LilyPond: absolute pitch with Dutch note "
-                        "names (ees for E flat, fis for F sharp), an explicit "
+"names — a flat adds -es and a sharp adds -is on every letter "
+                        "(ces des ees fes ges aes bes, cis dis eis fis gis "
+                        "ais bis), never cb or eb or f#. An explicit "
                         "duration on every note, a bar check | at every barline, and "
                         f"every bar filling {meter.surface_string()} exactly"
                     ),
