@@ -5,6 +5,7 @@ tool call, parse the result inward. Adding a capability means four artifacts,
 always all four — prompt builder, schema, parser, protocol method (docs/06).
 """
 
+from cadenzra.common.runlog import TurnInfo
 from cadenzra.llm.clients.gemini import GeminiClient
 from cadenzra.llm.parsers.structured import (
     parse_harmonic_skeleton,
@@ -28,13 +29,18 @@ from cadenzra.llm.prompts.structured import (
 from cadenzra.llm.prompts.voice import SYSTEM_PROMPT as VOICE_SYSTEM
 from cadenzra.llm.prompts.voice import build_voice_prompt
 from cadenzra.llm.schemas.structured import (
+    DERIVE_STYLE_TOOL,
+    PLAN_STRUCTURE_TOOL,
+    REVIEW_TOOL,
+    WRITE_HARMONY_TOOL,
+    WRITE_MOTIFS_TOOL,
     describe_style_schema,
     plan_structure_schema,
     review_schema,
     write_harmony_schema,
     write_motifs_schema,
 )
-from cadenzra.llm.schemas.voice import write_part_schema
+from cadenzra.llm.schemas.voice import WRITE_PART_TOOL, write_part_schema
 from cadenzra.model.contexts import HarmonyContext, MotifContext, VoiceContext
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
@@ -59,6 +65,7 @@ class GeminiGenerator:
             tool=describe_style_schema(
                 [meter.surface_string() for meter in spec.meters_allowed]
             ),
+            turn=TurnInfo(label=DERIVE_STYLE_TOOL),
         )
         return parse_style_pack(payload, spec)
 
@@ -76,6 +83,7 @@ class GeminiGenerator:
                 [voice.voice_id for voice in spec.voices],
                 sorted(spec.groups),
             ),
+            turn=TurnInfo(label=PLAN_STRUCTURE_TOOL),
         )
         return parse_structure_plan(payload, spec)
 
@@ -86,6 +94,7 @@ class GeminiGenerator:
                 ctx.briefs, ctx.spec, ctx.style, ctx.plan, ctx.feedback
             ),
             tool=write_motifs_schema(),
+            turn=TurnInfo(label=WRITE_MOTIFS_TOOL),
         )
         return parse_motif_library(payload)
 
@@ -101,6 +110,7 @@ class GeminiGenerator:
                 ctx.feedback,
             ),
             tool=write_harmony_schema(ctx.section.bars),
+            turn=TurnInfo(label=WRITE_HARMONY_TOOL, section_id=ctx.section.section_id),
         )
         return parse_harmonic_skeleton(payload, ctx.section)
 
@@ -111,6 +121,11 @@ class GeminiGenerator:
             tool=write_part_schema(
                 lyrics=ctx.voice.lyrics,
                 techniques=bool(ctx.rejected and ctx.rejected.techniques),
+            ),
+            turn=TurnInfo(
+                label=WRITE_PART_TOOL,
+                section_id=ctx.section.section_id,
+                voice_id=ctx.voice.voice_id,
             ),
         )
         return parse_voice_part(
@@ -128,5 +143,6 @@ class GeminiGenerator:
                 if block
             ),
             tool=review_schema(),
+            turn=TurnInfo(label=REVIEW_TOOL),
         )
         return parse_review_verdict(payload)

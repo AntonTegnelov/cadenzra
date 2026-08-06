@@ -7,13 +7,12 @@ traceback, on purpose (docs/07).
 """
 
 import argparse
-import logging
 import sys
 from pathlib import Path
 
 from cadenzra.app.compose import build_compose_services, compose
 from cadenzra.app.config import RunConfig
-from cadenzra.app.factory import build_generator, build_renderer
+from cadenzra.app.factory import build_generator, build_renderer, open_run_log
 from cadenzra.app.harness import compare, record, run_voice_trials
 from cadenzra.app.pipeline import (
     LayerServices,
@@ -24,6 +23,7 @@ from cadenzra.app.pipeline import (
 )
 from cadenzra.app.specs import SPECS
 from cadenzra.common.errors import CadenzraError
+from cadenzra.common.runlog import configure_logging
 from cadenzra.model.primitives.meter import MeterSpec, MeterTerm, simple_meter
 from cadenzra.model.state import PipelineState
 
@@ -61,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     harness.add_argument(
         "--no-record", action="store_true", help="do not write results to docs/"
     )
+    _add_log_level(harness)
 
     layers = commands.add_parser(
         "layers", help="run the structured layers live for one spec"
@@ -68,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     layers.add_argument("spec", choices=sorted(SPECS))
     layers.add_argument("--model", default=None)
     layers.add_argument("--workdir", type=Path, default=Path("out/layers"))
+    _add_log_level(layers)
 
     compose_cmd = commands.add_parser("compose", help="compose a piece end to end")
     compose_cmd.add_argument("spec", choices=sorted(SPECS))
@@ -76,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     compose_cmd.add_argument(
         "--no-critique", action="store_true", help="skip the audio listening pass"
     )
+    _add_log_level(compose_cmd)
 
     args = parser.parse_args(argv)
     try:
@@ -85,10 +88,22 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
+def _add_log_level(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--log-level",
+        choices=["debug", "info", "warning", "error"],
+        default=None,
+        help="threshold for the run's technical log (default: warning)",
+    )
+
+
 def _run(args: argparse.Namespace) -> int:
+    configure_logging()
     config = RunConfig()
     if args.model:
         config = config.model_copy(update={"generation_model": args.model})
+    if getattr(args, "log_level", None):
+        config = config.model_copy(update={"log_level": args.log_level})
 
     if args.command == "layers":
         return _run_layers(config, args)
@@ -125,14 +140,14 @@ def _run(args: argparse.Namespace) -> int:
 
 def _run_layers(config: RunConfig, args: argparse.Namespace) -> int:
     """Run style, plan, motifs and harmony live, and report what came back."""
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-
     spec = SPECS[args.spec]
+    runlog = open_run_log(config, args.workdir / args.spec)
     services = LayerServices(
-        generator=build_generator(config),
-        renderer=build_renderer(config),
+        generator=build_generator(config, runlog),
+        renderer=build_renderer(config, runlog),
         workdir=args.workdir / args.spec,
         budgets=config.budgets,
+        runlog=runlog,
     )
 
     state = PipelineState(spec=spec)
@@ -167,13 +182,12 @@ def _run_layers(config: RunConfig, args: argparse.Namespace) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(state.model_dump_json(indent=2), encoding="utf-8")
     print(f"\n  state written to {out}")
+    print(f"  run log      {runlog.dir}")
     return 0
 
 
 def _run_compose(config: RunConfig, args: argparse.Namespace) -> int:
     """Compose one piece and report where its artifacts landed."""
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-
     spec = SPECS[args.spec]
     out = args.out or config.output_dir / args.spec
     services = build_compose_services(
@@ -185,6 +199,8 @@ def _run_compose(config: RunConfig, args: argparse.Namespace) -> int:
     except CadenzraError as error:
         print(f"cadenzra: {error}", file=sys.stderr)
         print(f"cadenzra: partial artifacts written to {out}", file=sys.stderr)
+        assert services.runlog is not None
+        print(f"cadenzra: the run log is at {services.runlog.dir}", file=sys.stderr)
         return 1
 
     artifacts = state.artifacts
@@ -203,6 +219,7 @@ def _run_compose(config: RunConfig, args: argparse.Namespace) -> int:
         ("score midi", artifacts.score_midi_path),
         ("performance", artifacts.performance_midi_path),
         ("audio", artifacts.audio_path),
+        ("run log", services.runlog.dir if services.runlog else None),
     ):
         print(f"  {label:12} {path}")
     return 0

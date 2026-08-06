@@ -91,7 +91,9 @@ def compose(spec: PieceSpec, services: ComposeServices) -> PipelineState:
         state = assemble_and_verify(state, services)
         state = render(state, services)
         state = critique(state, services)
-    except CadenzraError:
+    except CadenzraError as error:
+        if services.runlog is not None:
+            services.runlog.note("The run failed", str(error))
         _write_partials(state, services.output_dir)
         raise
     _write_partials(state, services.output_dir)
@@ -213,6 +215,14 @@ def _voice_to_convergence(
             services.budgets.voice,
             "; ".join(item.message for item in feedback),
         )
+        if services.runlog is not None:
+            services.runlog.validation(
+                what=f"the {voice_id} part for section {section.section_id}",
+                loop_key=attempt_key("voice", section.section_id, voice_id),
+                attempt=attempt,
+                budget=services.budgets.voice,
+                messages=[item.message for item in feedback],
+            )
 
     raise BudgetExhaustedError(
         f"the {voice_id} part for section {section.section_id} still fails after "
@@ -294,6 +304,14 @@ def assemble_and_verify(
             services.budgets.section,
             "; ".join(item.message for item in feedback),
         )
+        if services.runlog is not None:
+            services.runlog.validation(
+                what="the cross-voice checks",
+                loop_key=attempt_key("section", None, None),
+                attempt=attempt,
+                budget=services.budgets.section,
+                messages=[item.message for item in feedback],
+            )
         if not targets:
             break
         state = _rewrite_voices(state, services, feedback, targets)
@@ -451,6 +469,14 @@ def critique(state: PipelineState, services: ComposeServices) -> PipelineState:
         _log.info("listening to the performance")
         verdict = services.critic.critique(artifacts.audio_path, _brief(state))
         items = [*measured, *services.router.localize(verdict, plan)]
+        if services.runlog is not None:
+            services.runlog.note(
+                "What the critic heard",
+                verdict.overall
+                + ("" if not items else "\n\n" + "\n".join(
+                    f"- [{item.level}] {item.message}" for item in items
+                )),
+            )
         if verdict.acceptable and not items:
             _log.info("the critic is satisfied")
             return state.model_copy(update={"feedback": []})
@@ -659,14 +685,19 @@ def build_compose_services(
         build_generator,
         build_renderer,
         build_synthesizer,
+        open_run_log,
     )
 
-    critic = build_critic(config) if with_critic else None
+    # First, before any layer runs: the log has to exist by the time the first
+    # prompt goes out, and a run that dies early is one whose log matters.
+    runlog = open_run_log(config, output_dir)
+    critic = build_critic(config, runlog) if with_critic else None
     return ComposeServices(
-        generator=build_generator(config),
-        renderer=build_renderer(config),
+        generator=build_generator(config, runlog),
+        renderer=build_renderer(config, runlog),
         workdir=output_dir / "work",
         budgets=config.budgets,
+        runlog=runlog,
         synthesizer=build_synthesizer(config),
         output_dir=output_dir,
         critic=critic,

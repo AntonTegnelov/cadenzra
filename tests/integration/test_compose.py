@@ -7,6 +7,7 @@ mutually consistent because they derive from one canonical text, and the
 crescendo the plan asked for is audible rather than merely printed.
 """
 
+import json
 import math
 import wave
 from array import array
@@ -18,6 +19,7 @@ import pytest
 
 from cadenzra.app.compose import ComposeServices, compose
 from cadenzra.app.config import RetryBudgets
+from cadenzra.common.runlog import RunLog
 from cadenzra.model.artifacts import RenderedArtifacts
 from cadenzra.model.harmony import HarmonicEvent, HarmonicSkeleton
 from cadenzra.model.primitives.meter import simple_meter
@@ -135,11 +137,13 @@ def composed(tmp_path_factory: pytest.TempPathFactory) -> tuple[PipelineState, P
         plans=[PLAN],
         skeletons=list(_skeletons().values()),
     )
+    runlog = RunLog(out / "runs" / "test")
     services = ComposeServices(
         generator=generator,
-        renderer=LilypondAdapter(),
+        renderer=LilypondAdapter(runlog=runlog),
         workdir=out / "work",
         budgets=RetryBudgets(),
+        runlog=runlog,
         synthesizer=FluidsynthAdapter(),
         output_dir=out,
     )
@@ -256,6 +260,26 @@ def test_the_run_writes_its_state_for_debugging(
 
     assert (out / "state.json").exists()
     assert (out / "score.ly").exists()
+
+
+def test_the_run_logs_every_compile_with_its_output(
+    composed: tuple[PipelineState, Path],
+) -> None:
+    """docs/07's run log, on a real run. The generator here is scripted, so
+    there are no LLM turns to record — but every compile is real, and the
+    compiler's own words are what a failure diagnosis is built from."""
+    _, out = composed
+    logs = out / "runs" / "test"
+
+    entries = [
+        json.loads(line)
+        for line in (logs / "llm.jsonl").read_text().splitlines()
+    ]
+    compiles = [entry for entry in entries if entry["kind"] == "compile"]
+
+    assert compiles, "every fragment and the full score compile through the log"
+    assert all("output" in entry for entry in compiles)
+    assert (logs / "technical.log").exists()
 
 
 def _notes(midi: mido.MidiFile) -> list[tuple[int, int]]:

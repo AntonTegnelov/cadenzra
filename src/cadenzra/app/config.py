@@ -66,6 +66,13 @@ class RunConfig(BaseSettings):
     llm_attempts: int = 3
     seed: int = 0
 
+    # The technical log's threshold, not the console's: progress narration
+    # stays visible at any setting. `info` traces everything the code does.
+    log_level: str = Field(default="warning", alias="LOG_LEVEL")
+    # Thought summaries are what make the narrative log worth reading — they
+    # are the difference between seeing a wrong answer and seeing why.
+    log_thoughts: bool = True
+
     def require_gemini_key(self) -> str:
         """The API key, or a clear message about where to put one."""
         if not self.gemini_key:

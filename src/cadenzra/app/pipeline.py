@@ -15,11 +15,12 @@ functions over state either way.
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from cadenzra.app.config import RetryBudgets
 from cadenzra.common.errors import BudgetExhaustedError
+from cadenzra.common.runlog import RunLog
 from cadenzra.interfaces.llm import GeneratorLLM
 from cadenzra.interfaces.rendering import ScoreRenderer
 from cadenzra.model.contexts import HarmonyContext, MotifContext
@@ -45,6 +46,8 @@ class LayerServices:
     renderer: ScoreRenderer
     workdir: Path
     budgets: RetryBudgets
+    # Keyword-only so subclasses may still declare required fields after it.
+    runlog: RunLog | None = field(default=None, kw_only=True)
 
 
 def derive_style(state: PipelineState, services: LayerServices) -> PipelineState:
@@ -70,6 +73,7 @@ def plan_structure(state: PipelineState, services: LayerServices) -> PipelineSta
         budget=services.budgets.structure,
         loop_key=attempt_key("structure", None, None),
         what="the plan",
+        runlog=services.runlog,
     )
     return state.model_copy(update={"structure": plan})
 
@@ -109,6 +113,7 @@ def generate_motifs(state: PipelineState, services: LayerServices) -> PipelineSt
         budget=services.budgets.motifs,
         loop_key=attempt_key("motif", None, None),
         what="the motifs",
+        runlog=services.runlog,
     )
     return state.model_copy(update={"motifs": motifs})
 
@@ -177,6 +182,7 @@ def _harmony_for(
         budget=services.budgets.harmony,
         loop_key=attempt_key("harmony", section.section_id, None),
         what=f"the harmony for section {section.section_id}",
+        runlog=services.runlog,
     )
 
 
@@ -198,6 +204,7 @@ def _converge[T](
     budget: int,
     loop_key: str,
     what: str,
+    runlog: RunLog | None = None,
 ) -> T:
     """Generate and validate until clean, or fail loudly when the budget runs out.
 
@@ -218,6 +225,14 @@ def _converge[T](
             budget,
             "; ".join(item.message for item in feedback),
         )
+        if runlog is not None:
+            runlog.validation(
+                what=what,
+                loop_key=loop_key,
+                attempt=attempt,
+                budget=budget,
+                messages=[item.message for item in feedback],
+            )
 
     raise BudgetExhaustedError(
         f"{what} still fails after {budget} attempts: "

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Final
 
 from cadenzra.common.errors import CadenzraError, LilypondCompileError
+from cadenzra.common.runlog import RunLog
 from cadenzra.model.artifacts import BarCheckWarning, CompileResult
 
 SOURCE_STEM: Final = "score"
@@ -85,11 +86,13 @@ class LilypondAdapter:
         *,
         timeout_s: float = DEFAULT_TIMEOUT_S,
         expected_version: str = EXPECTED_VERSION,
+        runlog: RunLog | None = None,
     ) -> None:
         self._executable = str(executable)
         self._timeout_s = timeout_s
         self._expected_version = expected_version
         self._version_checked = False
+        self._runlog = runlog
 
     def assert_version(self) -> str:
         """Fail at startup on a version drift, not mid-run on a parse miss.
@@ -159,29 +162,43 @@ class LilypondAdapter:
                 timeout=self._timeout_s,
             )
         except subprocess.TimeoutExpired as exc:
+            timed_out = _decode(exc.stdout) + _decode(exc.stderr)
+            self._record(workdir, clean=False, warnings=0, output=timed_out)
             raise LilypondCompileError(
                 f"LilyPond timed out after {self._timeout_s}s compiling {source_path}",
-                output=_decode(exc.stdout) + _decode(exc.stderr),
+                output=timed_out,
             ) from exc
 
         output = completed.stdout + completed.stderr
         if completed.returncode != 0:
             # A non-zero exit is a syntax or fatal error: no artifacts exist,
             # so there is nothing for a validator to inspect.
+            self._record(workdir, clean=False, warnings=0, output=output)
             raise LilypondCompileError(
                 f"LilyPond exited {completed.returncode} compiling {source_path}",
                 output=output,
             )
 
+        warnings = parse_bar_check_warnings(output)
+        self._record(workdir, clean=not warnings, warnings=len(warnings), output=output)
         pdf_path = workdir / f"{SOURCE_STEM}.pdf"
         midi_path = workdir / f"{SOURCE_STEM}.midi"
         return CompileResult(
             ok=True,
             pdf_path=pdf_path if pdf_path.exists() else None,
             midi_path=midi_path if midi_path.exists() else None,
-            bar_check_warnings=parse_bar_check_warnings(output),
+            bar_check_warnings=warnings,
             raw_output=output,
         )
+
+    def _record(
+        self, workdir: Path, *, clean: bool, warnings: int, output: str
+    ) -> None:
+        """Compiler output is evidence and must survive to the log (docs/06)."""
+        if self._runlog is not None:
+            self._runlog.compile_event(
+                workdir=str(workdir), clean=clean, warnings=warnings, raw_output=output
+            )
 
 
 def _decode(stream: str | bytes | None) -> str:

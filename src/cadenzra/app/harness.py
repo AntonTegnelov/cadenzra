@@ -16,7 +16,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from cadenzra.app.config import RunConfig
-from cadenzra.app.factory import build_generator, build_renderer
+from cadenzra.app.factory import build_generator, build_renderer, open_run_log
 from cadenzra.common.errors import CadenzraError
 from cadenzra.graph.nodes import build_voice_context
 from cadenzra.model.harmony import HarmonicEvent, HarmonicSkeleton
@@ -197,8 +197,11 @@ def run_voice_trials(
     workdir: Path,
 ) -> HarnessReport:
     """Run the generate-validate loop live, `trials` times, and measure it."""
-    generator = build_generator(config)
-    renderer = build_renderer(config)
+    # Harness runs are logged too: a surface A/B is exactly the case where the
+    # verbatim prompts of both arms are the thing worth reading afterwards.
+    runlog = open_run_log(config, workdir)
+    generator = build_generator(config, runlog)
+    renderer = build_renderer(config, runlog)
     started = time.monotonic()
 
     results = []

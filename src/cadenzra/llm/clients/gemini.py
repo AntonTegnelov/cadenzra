@@ -11,6 +11,7 @@ retried a fixed number of times and then raises.
 """
 
 import logging
+import time
 from pathlib import Path
 from typing import Any, Final
 
@@ -18,6 +19,7 @@ from google import genai
 from google.genai import types
 
 from cadenzra.common.errors import LLMOutputError
+from cadenzra.common.runlog import RunLog, TurnInfo
 
 _log = logging.getLogger(__name__)
 
@@ -36,11 +38,15 @@ class GeminiClient:
         *,
         attempts: int = 3,
         temperature: float | None = None,
+        runlog: RunLog | None = None,
+        include_thoughts: bool = False,
     ) -> None:
         self._client = genai.Client(api_key=api_key)
         self._model = model
         self._attempts = max(1, attempts)
         self._temperature = temperature
+        self._runlog = runlog
+        self._include_thoughts = include_thoughts
 
     def call_tool_with_audio(
         self,
@@ -49,6 +55,7 @@ class GeminiClient:
         user_prompt: str,
         tool: dict[str, Any],
         audio: Path,
+        turn: TurnInfo | None = None,
     ) -> dict[str, Any]:
         """As `call_tool`, with a recording alongside the prompt.
 
@@ -64,6 +71,8 @@ class GeminiClient:
                     data=audio.read_bytes(), mime_type=_mime_type_of(audio)
                 )
             ],
+            turn=turn,
+            audio=str(audio),
         )
 
     def call_tool(
@@ -73,11 +82,18 @@ class GeminiClient:
         user_prompt: str,
         tool: dict[str, Any],
         extra_parts: list[types.Part] | None = None,
+        turn: TurnInfo | None = None,
+        audio: str | None = None,
     ) -> dict[str, Any]:
         """Call the model and return the arguments of its forced tool call.
 
         Raises `LLMOutputError` if no usable tool call arrives within the
         retry budget.
+
+        `turn` says which part of the composition this call serves. The client
+        cannot know that on its own, and the run log is far less useful without
+        it — "the alto in section B, second attempt" is the unit a reader is
+        actually looking for.
         """
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
@@ -87,10 +103,17 @@ class GeminiClient:
                 function_calling_config=types.FunctionCallingConfig(mode=_FORCED)
             ),
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            thinking_config=(
+                types.ThinkingConfig(include_thoughts=True)
+                if self._include_thoughts
+                else None
+            ),
         )
 
         last_error: Exception | None = None
         for attempt in range(1, self._attempts + 1):
+            started = time.monotonic()
+            thoughts: str | None = None
             try:
                 contents: list[types.Part] = [
                     types.Part.from_text(text=user_prompt),
@@ -99,7 +122,7 @@ class GeminiClient:
                 response = self._client.models.generate_content(
                     model=self._model, contents=contents, config=config
                 )
-                return _arguments_of(response, tool["name"])
+                arguments, thoughts = _extract(response, tool["name"])
             except LLMOutputError as error:
                 last_error = error
                 _log.warning(
@@ -118,10 +141,70 @@ class GeminiClient:
                     self._attempts,
                     error,
                 )
+            else:
+                self._record(
+                    turn=turn,
+                    tool=tool,
+                    attempt=attempt,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    response=arguments,
+                    thoughts=thoughts,
+                    seconds=time.monotonic() - started,
+                    audio=audio,
+                )
+                return arguments
+
+            # A rejected attempt is the most informative turn in the log: it
+            # shows what the model was told at the moment it went wrong.
+            self._record(
+                turn=turn,
+                tool=tool,
+                attempt=attempt,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                response=None,
+                thoughts=thoughts,
+                seconds=time.monotonic() - started,
+                error=str(last_error),
+                audio=audio,
+            )
 
         raise LLMOutputError(
             f"{self._model} did not return a usable {tool['name']} call in "
             f"{self._attempts} attempts: {last_error}"
+        )
+
+    def _record(
+        self,
+        *,
+        turn: TurnInfo | None,
+        tool: dict[str, Any],
+        attempt: int,
+        system_prompt: str,
+        user_prompt: str,
+        response: dict[str, Any] | None,
+        thoughts: str | None,
+        seconds: float,
+        error: str | None = None,
+        audio: str | None = None,
+    ) -> None:
+        if self._runlog is None:
+            return
+        self._runlog.llm_turn(
+            turn=turn,
+            model=self._model,
+            temperature=self._temperature,
+            attempt=attempt,
+            attempts=self._attempts,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            tool_name=str(tool.get("name", "")),
+            response=response,
+            thoughts=thoughts,
+            seconds=seconds,
+            error=error,
+            audio=audio,
         )
 
 
@@ -137,15 +220,28 @@ def _mime_type_of(audio: Path) -> str:
     return _MIME_TYPES.get(audio.suffix.lower(), "audio/wav")
 
 
-def _arguments_of(response: types.GenerateContentResponse, tool_name: str) -> dict[str, Any]:
-    """Pull the forced call's arguments out of a response, or raise."""
+def _extract(
+    response: types.GenerateContentResponse, tool_name: str
+) -> tuple[dict[str, Any], str | None]:
+    """Pull the forced call's arguments and any thought summary, or raise.
+
+    Thoughts arrive as ordinary text parts flagged `thought`; a walk that only
+    looked for the function call would discard the reasoning that makes the
+    narrative log worth reading.
+    """
+    arguments: dict[str, Any] | None = None
+    thoughts: list[str] = []
     for candidate in response.candidates or []:
         for part in (candidate.content.parts if candidate.content else None) or []:
+            if part.thought and part.text:
+                thoughts.append(part.text)
             call = part.function_call
-            if call is not None and call.name == tool_name:
-                return dict(call.args or {})
+            if arguments is None and call is not None and call.name == tool_name:
+                arguments = dict(call.args or {})
 
-    raise LLMOutputError(
-        f"the model answered without calling {tool_name}; "
-        f"it said: {(response.text or '')[:300]!r}"
-    )
+    if arguments is None:
+        raise LLMOutputError(
+            f"the model answered without calling {tool_name}; "
+            f"it said: {(response.text or '')[:300]!r}"
+        )
+    return arguments, "\n\n".join(thoughts) if thoughts else None

@@ -16,6 +16,7 @@ from typing import Any, Final
 from google.genai import types
 
 from cadenzra.common.errors import LLMOutputError
+from cadenzra.common.runlog import TurnInfo
 from cadenzra.graph.routing import localize_verdict
 from cadenzra.llm.clients.gemini import GeminiClient
 from cadenzra.model.critique import CritiqueBrief, CritiqueVerdict, Observation
@@ -148,6 +149,7 @@ class GeminiCritic:
             user_prompt=build_critique_prompt(brief),
             tool=critique_schema(brief.sections, brief.voices),
             audio=audio,
+            turn=TurnInfo(label=CRITIQUE_TOOL),
         )
         return parse_critique_verdict(payload)
 
