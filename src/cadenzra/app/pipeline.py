@@ -17,21 +17,24 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 from cadenzra.app.config import RetryBudgets
-from cadenzra.common.errors import BudgetExhaustedError
+from cadenzra.common.errors import BudgetExhaustedError, LLMOutputError
 from cadenzra.common.runlog import RunLog
 from cadenzra.interfaces.llm import GeneratorLLM
 from cadenzra.interfaces.rendering import ScoreRenderer
 from cadenzra.model.contexts import HarmonyContext, MotifContext
-from cadenzra.model.feedback import FeedbackItem
+from cadenzra.model.feedback import FeedbackItem, FeedbackLevel
 from cadenzra.model.harmony import HarmonicSkeleton
+from cadenzra.model.lyrics import LyricPlan
 from cadenzra.model.motif import Motif, MotifLibrary
 from cadenzra.model.primitives.ids import SectionId
 from cadenzra.model.state import PipelineState, attempt_key
 from cadenzra.model.structure import SectionPlan, StructurePlan
 from cadenzra.model.style import StylePack
 from cadenzra.verification.harmony import validate_harmony
+from cadenzra.verification.lyrics import validate_lyric_plan
 from cadenzra.verification.motifs import validate_motifs
 from cadenzra.verification.structure import validate_structure
 
@@ -76,6 +79,33 @@ def plan_structure(state: PipelineState, services: LayerServices) -> PipelineSta
         runlog=services.runlog,
     )
     return state.model_copy(update={"structure": plan})
+
+
+def plan_lyrics(state: PipelineState, services: LayerServices) -> PipelineState:
+    """Decide what the words say, before any of them are written (docs/10).
+
+    Skipped entirely for instrumental pieces — the same conditional-skip shape
+    the motif layer uses, and the reason an instrumental spec never sees a word
+    of the device vocabulary.
+    """
+    style, plan = _require_style(state), _require_plan(state)
+    if not state.spec.has_lyrics:
+        return state
+
+    _log.info("planning the words")
+
+    def generate(feedback: list[FeedbackItem]) -> LyricPlan:
+        return services.generator.plan_lyrics(state.spec, style, plan, feedback)
+
+    lyric_plan = _converge(
+        generate,
+        lambda candidate: validate_lyric_plan(candidate, plan, state.spec),
+        budget=services.budgets.lyric_plan,
+        loop_key=attempt_key("lyric_plan", None, None),
+        what="the lyric plan",
+        runlog=services.runlog,
+    )
+    return state.model_copy(update={"lyric_plan": lyric_plan})
 
 
 def generate_motifs(state: PipelineState, services: LayerServices) -> PipelineState:
@@ -214,7 +244,33 @@ def _converge[T](
     """
     feedback: list[FeedbackItem] = []
     for attempt in range(1, budget + 1):
-        candidate = generate(feedback)
+        try:
+            candidate = generate(feedback)
+        except LLMOutputError as error:
+            # An artifact that will not parse is a rejection like any other,
+            # and the parser's complaint is the diagnosis — quoted, not
+            # paraphrased. Letting it escape would end the run over something
+            # the next attempt could fix if it were only told.
+            feedback = [
+                FeedbackItem(source="parser", level=_level_of(loop_key), message=str(error))
+            ]
+            _log.warning(
+                "%s came back malformed on attempt %d/%d: %s",
+                what,
+                attempt,
+                budget,
+                error,
+            )
+            if runlog is not None:
+                runlog.validation(
+                    what=what,
+                    loop_key=loop_key,
+                    attempt=attempt,
+                    budget=budget,
+                    messages=[str(error)],
+                )
+            continue
+
         feedback = validate(candidate)
         if not feedback:
             return candidate
@@ -240,6 +296,12 @@ def _converge[T](
         loop_key=loop_key,
         attempts=budget,
     )
+
+
+def _level_of(loop_key: str) -> FeedbackLevel:
+    """The feedback level a loop key belongs to (`attempt_key` builds them)."""
+    level = loop_key.split(":", 1)[0]
+    return cast(FeedbackLevel, "lyric" if level == "lyric_plan" else level)
 
 
 def _require_style(state: PipelineState) -> StylePack:

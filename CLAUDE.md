@@ -50,6 +50,11 @@ prompt, or a bar number in `verification/` logic, is a bug.
 - **Do not let validators legislate taste.** docs/01 rules out a general
   music-theory engine. Checks decide arithmetic, ranges, and declared
   relationships. "Is this a good chord" is not one of them.
+- **Lyrics are written per section, after the music, in one call for every
+  singing voice.** Never re-add per-voice lyric generation: voices that cannot
+  see each other's words invent separate texts, and that produced a piece with
+  one voice in Latin over another in English. See `docs/10-lyrics.md`.
+
 - **Do not give an LLM judge the answer key.** The audio critic's brief
   deliberately withholds what the piece was trying to be; told the intended
   shape, it reports hearing that shape whether or not it is there. See

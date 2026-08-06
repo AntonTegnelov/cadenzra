@@ -29,11 +29,14 @@ SOURCE: Final = "critique_audio"
 LEVEL_COST: Final[dict[FeedbackLevel, int]] = {
     "render": 0,
     "interpretation": 1,
-    "voice": 2,
-    "section": 3,
-    "harmony": 4,
-    "motif": 5,
-    "structure": 6,
+    # Words are cheaper than notes: regenerating a section's lyrics leaves
+    # every validated fragment untouched (docs/10).
+    "lyric": 2,
+    "voice": 3,
+    "section": 4,
+    "harmony": 5,
+    "motif": 6,
+    "structure": 7,
 }
 
 # Complaints whose natural home is a knob rather than a note. Each phrase names

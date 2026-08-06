@@ -32,6 +32,10 @@ Per-fragment validation compiles each fragment inside a minimal scaffold (the se
 
 **`validate_harmony`** *(deterministic + LLM)* — events ordered, gapless, exactly filling the section (exact `Fraction` arithmetic on internal offsets); chord symbols parseable. LLM check: progression fits `harmony_guidance`, boundary continuity, accommodation of declared material.
 
+**`validate_lyric_plan`** *(deterministic)* — every sung section has a brief and no unsung one does; devices are in the controlled vocabulary; a declared refrain points at a section that already happened; anything the spec demanded (a scheme, particular devices) is actually placed somewhere. Cheap checks on a cheap artifact, before a single word is written ([10](10-lyrics.md)).
+
+**`validate_section_lyrics`** *(deterministic + LLM)* — per sung section: each voice's words compiled against its own music, so the compiler decides syllable alignment as it always has; a `unison` relationship means identical text across voices; a declared refrain reproduces its source; a declared rhyme scheme holds, checked phonetically through CMUdict and English-only, with unknown words skipped rather than failed. LLM check: the devices the directive asked for, verified **blind** — a reader is shown the words and the whole vocabulary, never the request, and the comparison happens outside the model. Advisory, one nudge, never a veto ([10](10-lyrics.md)).
+
 **`validate_voice`** *(deterministic)* — per fragment: scaffolded compile succeeds with zero bar-check warnings; every note within `[range_low, range_high]` (from the fragment's MIDI, in cents); explicit-duration and no-structural-commands contract respected (a token-level denylist scan — the one place a regex touches LilyPond, justified because a denylist is not a parser); `TechniqueSpan`s use the controlled vocabulary and land inside the fragment; lyric syllable count matches note count where applicable (compiler warning).
 
 **`validate_section`** *(deterministic)* — all voices assembled: cross-voice checks on the section's score MIDI. Parallel fifths/octaves between voice pairs, judged against `StylePack.parallel_fifths_policy`; voice crossings against the plan's texture; **harmonic alignment** — at each harmonic event onset, sounding pitches (12-EDO view) are checked against the chord's pitch-class set, with non-chord tones permitted per `dissonance_policy` (passing/neighbor tones resolved by step always allowed; the checker flags *sustained* unexplained clashes); **material-entry verification** — for each declared `MaterialEntry`, the interval sequence and rhythm profile at the declared position must realize the motif under the declared relation. Exact transpositions ("P5 up", "octave down", "inversion") check as strict interval-sequence equality after the transform; elastic relations ("tonal answer") check with a bounded per-interval deviation (the idiom adjusts scale degrees, not the contour). Failures name the offending voice(s) and the first deviating beat, so the router can target regeneration.
@@ -49,7 +53,7 @@ Every validator failure and critic observation is one shape:
 ```python
 class FeedbackItem(BaseModel):
     source: str                            # emitting node
-    level: Literal["structure", "motif", "harmony", "voice",
+    level: Literal["structure", "motif", "harmony", "lyric", "voice",
                    "section", "score", "interpretation", "render"]
     section_id: SectionId | None
     voice_id: VoiceId | None

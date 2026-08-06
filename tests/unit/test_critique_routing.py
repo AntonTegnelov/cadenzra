@@ -81,6 +81,13 @@ def test_the_cost_order_puts_notes_above_knobs_and_form_above_everything() -> No
     assert LEVEL_COST["harmony"] < LEVEL_COST["structure"]
 
 
+def test_words_are_cheaper_than_notes() -> None:
+    """Rewriting a section's lyrics leaves every validated fragment standing,
+    so it sits below voice and above the knobs (docs/10)."""
+    assert LEVEL_COST["interpretation"] < LEVEL_COST["lyric"]
+    assert LEVEL_COST["lyric"] < LEVEL_COST["voice"]
+
+
 def test_observations_become_routable_feedback() -> None:
     verdict = CritiqueVerdict(
         overall="promising but stiff",

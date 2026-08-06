@@ -8,9 +8,15 @@ into one method) invisible above the boundary (docs/06).
 
 from typing import Protocol
 
-from cadenzra.model.contexts import HarmonyContext, MotifContext, VoiceContext
+from cadenzra.model.contexts import (
+    HarmonyContext,
+    LyricsContext,
+    MotifContext,
+    VoiceContext,
+)
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
+from cadenzra.model.lyrics import DeviceObservation, LyricPlan, SectionLyrics
 from cadenzra.model.motif import MotifLibrary
 from cadenzra.model.review import ReviewRequest, ReviewVerdict
 from cadenzra.model.spec import PieceSpec
@@ -31,10 +37,22 @@ class GeneratorLLM(Protocol):
         feedback: list[FeedbackItem] | None = None,
     ) -> StructurePlan: ...
 
+    def plan_lyrics(
+        self,
+        spec: PieceSpec,
+        style: StylePack,
+        plan: StructurePlan,
+        feedback: list[FeedbackItem] | None = None,
+    ) -> LyricPlan: ...
+
     def generate_motifs(self, ctx: MotifContext) -> MotifLibrary: ...
 
     def generate_harmony(self, ctx: HarmonyContext) -> HarmonicSkeleton: ...
 
     def generate_voice(self, ctx: VoiceContext) -> VoicePart: ...
+
+    def generate_lyrics(self, ctx: LyricsContext) -> SectionLyrics: ...
+
+    def observe_lyric_devices(self, lyrics_text: str) -> list[DeviceObservation]: ...
 
     def review(self, request: ReviewRequest) -> ReviewVerdict: ...

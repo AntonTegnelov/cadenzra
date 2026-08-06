@@ -10,7 +10,9 @@ from pydantic import BaseModel, Field
 
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
+from cadenzra.model.lyrics import SectionLyricDirective, SectionLyrics
 from cadenzra.model.motif import Motif
+from cadenzra.model.primitives.ids import VoiceId
 from cadenzra.model.spec import PieceSpec, VoiceSpec
 from cadenzra.model.structure import (
     MaterialBrief,
@@ -84,3 +86,26 @@ class VoiceContext(BaseModel, frozen=True):
     @property
     def is_regeneration(self) -> bool:
         return self.rejected is not None
+
+
+class LyricsContext(BaseModel, frozen=True):
+    """Everything needed to write one section's words — for every voice at once.
+
+    Deliberately *not* per-voice. Coordination between singers is the thing
+    this layer exists to guarantee, and a per-voice call cannot guarantee it
+    however well it is prompted (docs/10).
+    """
+
+    section: SectionPlan
+    directive: SectionLyricDirective
+    language: str
+    story: str
+    voice_ids: list[VoiceId] = Field(default_factory=list)
+    # The music these words are being set to, already validated.
+    parts: dict[VoiceId, VoicePart] = Field(default_factory=dict)
+    # Earlier sections' words, so this one continues them.
+    previous: list[SectionLyrics] = Field(default_factory=list)
+    # When this section declared itself a refrain, the words it brings back.
+    refrain_source: SectionLyrics | None = None
+    rejected: SectionLyrics | None = None
+    feedback: list[FeedbackItem] = Field(default_factory=list)

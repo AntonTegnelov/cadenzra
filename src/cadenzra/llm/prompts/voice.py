@@ -73,9 +73,10 @@ def build_voice_prompt(ctx: VoiceContext) -> str:
 
     if ctx.voice.lyrics:
         blocks.append(
-            "This part is sung: also write the lyrics as a \\lyricmode block, one "
-            "syllable per note, using -- between syllables of a word and __ for a "
-            "melisma."
+            "This part is sung. The words are written afterwards, to fit the line "
+            "you write, so write a singable one: phrases a singer can breathe "
+            "between, and note groupings that take one syllable each, with the "
+            "occasional held note where a vowel can open out."
         )
 
     if _uses_techniques(ctx):

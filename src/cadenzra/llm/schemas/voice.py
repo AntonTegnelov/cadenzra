@@ -14,12 +14,15 @@ from typing import Any, Final
 WRITE_PART_TOOL: Final = "write_part"
 
 
-def write_part_schema(*, lyrics: bool, techniques: bool) -> dict[str, Any]:
+def write_part_schema(*, techniques: bool) -> dict[str, Any]:
     """The schema for one voice part.
 
-    `lyrics` and `techniques` gate their fields out of the schema entirely when
-    the piece has no use for them — the surface shows only what is needed
-    (docs/04).
+    `techniques` gates its field out of the schema entirely when the piece has
+    no use for it — the surface shows only what is needed (docs/04).
+
+    There is no lyrics field: words are written afterwards, by the lyric layer,
+    against the finished music and for every singer in the section at once
+    (docs/10).
     """
     properties: dict[str, Any] = {
         "lily_music": {
@@ -32,16 +35,6 @@ def write_part_schema(*, lyrics: bool, techniques: bool) -> dict[str, Any]:
         }
     }
     required = ["lily_music"]
-
-    if lyrics:
-        properties["lily_lyrics"] = {
-            "type": "string",
-            "description": (
-                "The sung text as a \\lyricmode { ... } block, one syllable per "
-                "note, -- between syllables and __ for a melisma."
-            ),
-        }
-        required.append("lily_lyrics")
 
     if techniques:
         properties["techniques"] = {

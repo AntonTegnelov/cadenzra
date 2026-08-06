@@ -197,3 +197,33 @@ def test_the_generator_receives_the_musician_facing_context(tmp_path: Path) -> N
     assert ctx.section.section_id == "A"
     assert ctx.voice.voice_id == "alto"
     assert ctx.section.meter.surface_string() == "7/8 (2+2+3)"
+
+
+def test_a_malformed_artifact_is_a_rejection_not_the_end_of_the_run() -> None:
+    """A model that returns an unparseable plan should be told what was wrong
+    and asked again — ending the run over it wastes an entire budget on
+    something the next attempt could fix (docs/05)."""
+    from cadenzra.app.pipeline import _converge
+    from cadenzra.common.errors import LLMOutputError
+
+    seen: list[list[str]] = []
+    attempts = {"n": 0}
+
+    def generate(feedback: list[FeedbackItem]) -> str:
+        seen.append([item.message for item in feedback])
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise LLMOutputError("a 'riff' entry at bar 0, outside its 5 bars")
+        return "a good plan"
+
+    result = _converge(
+        generate,
+        lambda candidate: [],
+        budget=3,
+        loop_key="structure",
+        what="the plan",
+    )
+
+    assert result == "a good plan"
+    # The parser's own words reached the retry, rather than a paraphrase.
+    assert "bar 0" in seen[1][0]

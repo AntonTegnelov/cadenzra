@@ -58,6 +58,26 @@ This is the workhorse node and the one engineered most heavily around LLM weakne
 
 **Fan-out.** Within a section, voices generate concurrently (independent given the skeleton), except where texture creates ordering dependencies as above. Across sections, generation is sequential per voice so the sliding window is available.
 
+**Words are not written here.** A sung part is told only that it will be sung, and to leave room for a syllable per note. The words themselves come from the two layers below, after the music exists.
+
+## `plan_lyrics`
+
+**In:** spec, style pack, structure plan. **Out:** a `LyricPlan` — one story for the piece, and per sung section a story beat, a voice relationship, an optional rhyme scheme, optional devices from a controlled vocabulary, and an optional refrain link.
+
+Runs immediately after `plan_structure` and is **skipped entirely** for instrumental pieces, so a fugue or a synthwave track never sees a word of the lyric vocabulary — the same conditional skip the motif layer uses, for the same capability-gating reason.
+
+**Why a layer and not a field on the plan.** Conditionally mutating the structure schema per spec is messier than a gated layer, the plan prompt is already large, and directives need their own convergence loop. Full reasoning in [10](10-lyrics.md).
+
+## `generate_lyrics`
+
+**In:** a `LyricsContext` — the section's directive, its *realized notation* verbatim, the language, the story, the preceding sections' words, and a refrain source when one is declared. **Out:** a `SectionLyrics` covering every singing voice in the section.
+
+**One call per section, all voices at once.** This is the layer's whole reason for existing. Voices generated separately invent separate texts — one run produced a piece with one voice in Latin and another in English simultaneously — and no amount of prompting fixes a context that structurally cannot see the other singer. One writer, one text.
+
+**It deliberately breaks the fan-out symmetry above**, under the same clause that already allows it: texture creates ordering dependencies. Coordinated words are that case, taken to its conclusion.
+
+**Words follow notes.** The music is finished and shown verbatim; the words are fitted to it. When cross-voice checks later rewrite a voice's music, that section's words are regenerated after it — notation is the source of truth and everything downstream of it rebuilds ([03](03-musical-representations.md)).
+
 ## Regeneration prompts
 
 When a validator bounces a fragment back, the regeneration prompt contains: the original task context, the rejected fragment, and the structured feedback rendered **like a rehearsal note** — concrete, mechanical, in musician's terms: "bar 7 contains 9 eighth-notes; the meter is 7/8 (2+2+3) — remove one eighth or retie", "d''4 in bar 3 exceeds the alto ceiling of c''", "the entry at bar 5 should be the subject a fifth up; beats 3–4 deviate from its interval sequence". Feedback precision is a validator design requirement, not a nicety — the regeneration prompt is `FeedbackItem.message`'s real consumer ([05](05-verification-and-feedback.md)). The failing fragment is included because minimal repair preserves accepted material; regeneration from scratch is the fallback when repair fails twice.

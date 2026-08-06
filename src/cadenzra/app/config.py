@@ -31,6 +31,8 @@ class RetryBudgets(BaseSettings):
     structure: int = 3
     motifs: int = 3
     harmony: int = 3
+    lyric_plan: int = 3
+    lyric: int = 3
     voice: int = 3
     section: int = 3
     score: int = 3

@@ -174,9 +174,16 @@ def test_techniques_are_not_mentioned_unless_the_piece_uses_them() -> None:
     assert "vocal fry" not in prompt
 
 
-def test_lyrics_are_asked_for_only_from_a_singing_voice() -> None:
-    assert "lyricmode" not in build_voice_prompt(_ctx())
-    assert "lyricmode" in build_voice_prompt(_ctx(voice=SOPRANO_SINGING))
+def test_a_singing_voice_is_told_its_words_come_later() -> None:
+    """Words are written afterwards, against the finished music and for every
+    singer at once, so the voice call never writes them (docs/10)."""
+    instrumental = build_voice_prompt(_ctx())
+    singing = build_voice_prompt(_ctx(voice=SOPRANO_SINGING))
+
+    assert "lyricmode" not in instrumental and "sung" not in instrumental
+    assert "This part is sung" in singing
+    assert "written afterwards" in singing
+    assert "lyricmode" not in singing
 
 
 def test_a_motif_travels_as_notation_with_an_instruction_not_an_id() -> None:
@@ -217,18 +224,18 @@ def test_a_regeneration_prompt_carries_the_rejection_and_the_rehearsal_notes() -
 
 
 def test_the_schema_shows_only_the_fields_the_piece_needs() -> None:
-    plain = write_part_schema(lyrics=False, techniques=False)
-    singing = write_part_schema(lyrics=True, techniques=False)
+    plain = write_part_schema(techniques=False)
+    extended = write_part_schema(techniques=True)
 
     assert set(plain["parameters"]["properties"]) == {"lily_music"}
-    assert "lily_lyrics" in singing["parameters"]["properties"]
-    assert "lily_lyrics" in singing["parameters"]["required"]
+    assert "techniques" in extended["parameters"]["properties"]
+    assert "lily_lyrics" not in extended["parameters"]["properties"]
 
 
 def test_no_internal_type_ever_reaches_a_schema() -> None:
     """A `Fraction` in a tool schema would put the internal register in front
     of the model — the one thing the seam exists to prevent (docs/06)."""
-    rendered = str(write_part_schema(lyrics=True, techniques=True))
+    rendered = str(write_part_schema(techniques=True))
 
     assert "Fraction" not in rendered
     assert "offset" not in rendered

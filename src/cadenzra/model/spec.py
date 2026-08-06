@@ -1,8 +1,8 @@
 """`PieceSpec` — the user's intent, and the only input the pipeline takes."""
 
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from cadenzra.model.primitives.ids import VoiceId
 from cadenzra.model.primitives.meter import MeterSpec
@@ -39,6 +39,25 @@ class VoiceSpec(BaseModel, frozen=True):
         return self
 
 
+class LyricsSpec(BaseModel, frozen=True):
+    """What the words are for, when there are words (docs/10).
+
+    `language` is the one that had to exist: it was a field on `PieceSpec` that
+    nothing ever read, which is how a piece ended up with one voice singing
+    Latin over another singing English. It now reaches every lyric prompt.
+    """
+
+    language: str = "English"
+    # The story or subject in the user's own words; the lyric planner turns it
+    # into per-section beats.
+    brief: str = ""
+    # A scheme the user is asking for, e.g. "AABB". None leaves it to the plan.
+    rhyme_scheme: str | None = None
+    # Devices the user wants used. The planner may add others; these are the
+    # ones it may not drop.
+    devices: list[str] = Field(default_factory=list)
+
+
 class PieceSpec(BaseModel, frozen=True):
     """What to compose. Style arrives as free text and is interpreted once,
     into a `StylePack`, so no downstream node re-interprets it (docs/04)."""
@@ -51,6 +70,17 @@ class PieceSpec(BaseModel, frozen=True):
     target_minutes: float
     tempo_bpm: int | None = None
     language: str | None = None
+    lyrics: LyricsSpec | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_language(cls, data: Any) -> Any:
+        """A piece that names a language but no `LyricsSpec` still means it."""
+        if not isinstance(data, dict):
+            return data
+        if data.get("lyrics") is None and data.get("language"):
+            data = {**data, "lyrics": LyricsSpec(language=str(data["language"]))}
+        return data
 
     @model_validator(mode="after")
     def _check_piece(self) -> Self:
@@ -77,3 +107,14 @@ class PieceSpec(BaseModel, frozen=True):
     @property
     def has_lyrics(self) -> bool:
         return any(voice.lyrics for voice in self.voices)
+
+    @property
+    def singing_voices(self) -> list[VoiceSpec]:
+        return [voice for voice in self.voices if voice.lyrics]
+
+    @property
+    def lyric_language(self) -> str:
+        """One language for the piece, stated once."""
+        if self.lyrics is not None:
+            return self.lyrics.language
+        return self.language or "English"

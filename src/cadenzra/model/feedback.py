@@ -18,6 +18,7 @@ type FeedbackLevel = Literal[
     "structure",
     "motif",
     "harmony",
+    "lyric",
     "voice",
     "section",
     "score",

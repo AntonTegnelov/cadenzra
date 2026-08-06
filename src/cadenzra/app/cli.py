@@ -13,7 +13,12 @@ from pathlib import Path
 from cadenzra.app.compose import build_compose_services, compose
 from cadenzra.app.config import RunConfig
 from cadenzra.app.factory import build_generator, build_renderer, open_run_log
-from cadenzra.app.harness import compare, record, run_voice_trials
+from cadenzra.app.harness import (
+    compare,
+    record,
+    run_lyric_trials,
+    run_voice_trials,
+)
 from cadenzra.app.pipeline import (
     LayerServices,
     derive_style,
@@ -46,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     harness = commands.add_parser(
         "harness", help="measure one capability against the real model"
     )
-    harness.add_argument("capability", choices=["voice"])
+    harness.add_argument("capability", choices=["voice", "lyrics"])
     harness.add_argument("--meter", choices=sorted(_METERS), default="7/8")
     harness.add_argument("--trials", type=int, default=10)
     harness.add_argument("--bars", type=int, default=8)
@@ -56,6 +61,14 @@ def main(argv: list[str] | None = None) -> int:
         "--ab",
         action="store_true",
         help="run the rhythmic-cell surface A/B and report both arms",
+    )
+    harness.add_argument(
+        "--scheme", default="AABB", help="rhyme scheme for lyric trials"
+    )
+    harness.add_argument(
+        "--devices",
+        default="",
+        help="comma-separated lyric devices to demand, for lyric trials",
     )
     harness.add_argument("--workdir", type=Path, default=Path("out/harness"))
     harness.add_argument(
@@ -112,6 +125,9 @@ def _run(args: argparse.Namespace) -> int:
     if args.command != "harness":
         raise CadenzraError(f"unknown command {args.command!r}")
 
+    if args.capability == "lyrics":
+        return _run_lyric_harness(config, args)
+
     meter = _METERS[args.meter]
     variants = [True, False] if args.ab else [True]
 
@@ -136,6 +152,23 @@ def _run(args: argparse.Namespace) -> int:
         print(compare(reports))
 
     return 0 if all(report.pass_rate >= 0.8 for report in reports) else 1
+
+
+def _run_lyric_harness(config: RunConfig, args: argparse.Namespace) -> int:
+    """Measure the words: singable against the notes, and in the stated scheme."""
+    devices = [d.strip() for d in args.devices.split(",") if d.strip()]
+    report = run_lyric_trials(
+        config,
+        trials=args.trials,
+        budget=args.budget,
+        scheme=args.scheme,
+        devices=devices,
+        workdir=args.workdir / "lyrics",
+    )
+    print(report.summary())
+    if not args.no_record:
+        print(f"  recorded to {record(report)}")
+    return 0 if report.pass_rate >= 0.8 else 1
 
 
 def _run_layers(config: RunConfig, args: argparse.Namespace) -> int:

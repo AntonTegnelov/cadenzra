@@ -7,6 +7,11 @@ always all four — prompt builder, schema, parser, protocol method (docs/06).
 
 from cadenzra.common.runlog import TurnInfo
 from cadenzra.llm.clients.gemini import GeminiClient
+from cadenzra.llm.parsers.lyrics import (
+    parse_device_observations,
+    parse_lyric_plan,
+    parse_section_lyrics,
+)
 from cadenzra.llm.parsers.structured import (
     parse_harmonic_skeleton,
     parse_motif_library,
@@ -15,6 +20,14 @@ from cadenzra.llm.parsers.structured import (
     parse_style_pack,
 )
 from cadenzra.llm.parsers.voice import parse_voice_part
+from cadenzra.llm.prompts.lyrics import (
+    DEVICE_OBSERVATION_SYSTEM,
+    LYRIC_PLAN_SYSTEM,
+    LYRICS_SYSTEM,
+    build_device_observation_prompt,
+    build_lyric_plan_prompt,
+    build_lyrics_prompt,
+)
 from cadenzra.llm.prompts.structured import (
     HARMONY_SYSTEM,
     MOTIF_SYSTEM,
@@ -28,6 +41,14 @@ from cadenzra.llm.prompts.structured import (
 )
 from cadenzra.llm.prompts.voice import SYSTEM_PROMPT as VOICE_SYSTEM
 from cadenzra.llm.prompts.voice import build_voice_prompt
+from cadenzra.llm.schemas.lyrics import (
+    OBSERVE_DEVICES_TOOL,
+    PLAN_LYRICS_TOOL,
+    WRITE_LYRICS_TOOL,
+    observe_devices_schema,
+    plan_lyrics_schema,
+    write_lyrics_schema,
+)
 from cadenzra.llm.schemas.structured import (
     DERIVE_STYLE_TOOL,
     PLAN_STRUCTURE_TOOL,
@@ -41,9 +62,20 @@ from cadenzra.llm.schemas.structured import (
     write_motifs_schema,
 )
 from cadenzra.llm.schemas.voice import WRITE_PART_TOOL, write_part_schema
-from cadenzra.model.contexts import HarmonyContext, MotifContext, VoiceContext
+from cadenzra.model.contexts import (
+    HarmonyContext,
+    LyricsContext,
+    MotifContext,
+    VoiceContext,
+)
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
+from cadenzra.model.lyrics import (
+    RELATIONSHIP_DEFINITIONS,
+    DeviceObservation,
+    LyricPlan,
+    SectionLyrics,
+)
 from cadenzra.model.motif import MotifLibrary
 from cadenzra.model.review import ReviewRequest, ReviewVerdict
 from cadenzra.model.spec import PieceSpec
@@ -87,6 +119,24 @@ class GeminiGenerator:
         )
         return parse_structure_plan(payload, spec)
 
+    def plan_lyrics(
+        self,
+        spec: PieceSpec,
+        style: StylePack,
+        plan: StructurePlan,
+        feedback: list[FeedbackItem] | None = None,
+    ) -> LyricPlan:
+        payload = self._client.call_tool(
+            system_prompt=LYRIC_PLAN_SYSTEM,
+            user_prompt=build_lyric_plan_prompt(spec, style, plan, feedback),
+            tool=plan_lyrics_schema(
+                [section.section_id for section in plan.sections],
+                sorted(RELATIONSHIP_DEFINITIONS),
+            ),
+            turn=TurnInfo(label=PLAN_LYRICS_TOOL),
+        )
+        return parse_lyric_plan(payload, plan, language=spec.lyric_language)
+
     def generate_motifs(self, ctx: MotifContext) -> MotifLibrary:
         payload = self._client.call_tool(
             system_prompt=MOTIF_SYSTEM,
@@ -119,7 +169,6 @@ class GeminiGenerator:
             system_prompt=VOICE_SYSTEM,
             user_prompt=build_voice_prompt(ctx),
             tool=write_part_schema(
-                lyrics=ctx.voice.lyrics,
                 techniques=bool(ctx.rejected and ctx.rejected.techniques),
             ),
             turn=TurnInfo(
@@ -133,6 +182,29 @@ class GeminiGenerator:
             section_id=ctx.section.section_id,
             voice_id=ctx.voice.voice_id,
         )
+
+    def generate_lyrics(self, ctx: LyricsContext) -> SectionLyrics:
+        payload = self._client.call_tool(
+            system_prompt=LYRICS_SYSTEM,
+            user_prompt=build_lyrics_prompt(ctx),
+            tool=write_lyrics_schema(ctx.voice_ids),
+            turn=TurnInfo(
+                label=WRITE_LYRICS_TOOL, section_id=ctx.section.section_id
+            ),
+        )
+        return parse_section_lyrics(
+            payload, section_id=ctx.section.section_id, voice_ids=ctx.voice_ids
+        )
+
+    def observe_lyric_devices(self, lyrics_text: str) -> list[DeviceObservation]:
+        """Read the lyrics blind and report what is in them (docs/10)."""
+        payload = self._client.call_tool(
+            system_prompt=DEVICE_OBSERVATION_SYSTEM,
+            user_prompt=build_device_observation_prompt(lyrics_text),
+            tool=observe_devices_schema(),
+            turn=TurnInfo(label=OBSERVE_DEVICES_TOOL),
+        )
+        return parse_device_observations(payload)
 
     def review(self, request: ReviewRequest) -> ReviewVerdict:
         payload = self._client.call_tool(

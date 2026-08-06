@@ -1,8 +1,14 @@
 """A `GeneratorLLM` that returns canned artifacts, in order."""
 
-from cadenzra.model.contexts import HarmonyContext, MotifContext, VoiceContext
+from cadenzra.model.contexts import (
+    HarmonyContext,
+    LyricsContext,
+    MotifContext,
+    VoiceContext,
+)
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
+from cadenzra.model.lyrics import DeviceObservation, LyricPlan, SectionLyrics
 from cadenzra.model.motif import MotifLibrary
 from cadenzra.model.review import ReviewRequest, ReviewVerdict
 from cadenzra.model.spec import PieceSpec
@@ -30,6 +36,9 @@ class ScriptedGenerator:
         motifs: list[MotifLibrary] | None = None,
         skeletons: list[HarmonicSkeleton] | None = None,
         verdicts: list[ReviewVerdict] | None = None,
+        lyric_plans: list[LyricPlan] | None = None,
+        lyrics: dict[str, SectionLyrics] | None = None,
+        observations: list[DeviceObservation] | None = None,
     ) -> None:
         self._fragments = list(fragments or [])
         self._by_voice = dict(by_voice or {})
@@ -38,8 +47,13 @@ class ScriptedGenerator:
         self._motifs = list(motifs or [])
         self._skeletons = list(skeletons or [])
         self._verdicts = list(verdicts or [])
+        self._lyric_plans = list(lyric_plans or [])
+        self._lyrics = dict(lyrics or {})
+        self._observations = list(observations or [])
 
         self.contexts: list[VoiceContext] = []
+        self.lyrics_contexts: list[LyricsContext] = []
+        self.lyric_plan_calls = 0
         self.motif_contexts: list[MotifContext] = []
         self.harmony_contexts: list[HarmonyContext] = []
         self.reviews: list[ReviewRequest] = []
@@ -58,6 +72,16 @@ class ScriptedGenerator:
     ) -> StructurePlan:
         self.plan_calls += 1
         return _pick(self._plans, self.plan_calls - 1, what="plan")
+
+    def plan_lyrics(
+        self,
+        spec: PieceSpec,
+        style: StylePack,
+        plan: StructurePlan,
+        feedback: list[FeedbackItem] | None = None,
+    ) -> LyricPlan:
+        self.lyric_plan_calls += 1
+        return _pick(self._lyric_plans, self.lyric_plan_calls - 1, what="lyric plan")
 
     def generate_motifs(self, ctx: MotifContext) -> MotifLibrary:
         self.motif_contexts.append(ctx)
@@ -82,6 +106,19 @@ class ScriptedGenerator:
             voice_id=ctx.voice.voice_id,
             lily_music=music,
         )
+
+    def generate_lyrics(self, ctx: LyricsContext) -> SectionLyrics:
+        self.lyrics_contexts.append(ctx)
+        # Keyed by section, because that is the unit a lyric call covers.
+        if ctx.section.section_id not in self._lyrics:
+            raise AssertionError(
+                f"the fake generator has no lyrics scripted for "
+                f"section {ctx.section.section_id}"
+            )
+        return self._lyrics[ctx.section.section_id]
+
+    def observe_lyric_devices(self, lyrics_text: str) -> list[DeviceObservation]:
+        return list(self._observations)
 
     def review(self, request: ReviewRequest) -> ReviewVerdict:
         self.reviews.append(request)

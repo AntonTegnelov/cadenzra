@@ -19,7 +19,10 @@ from cadenzra.app.config import RunConfig
 from cadenzra.app.factory import build_generator, build_renderer, open_run_log
 from cadenzra.common.errors import CadenzraError
 from cadenzra.graph.nodes import build_voice_context
+from cadenzra.model.contexts import LyricsContext
+from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicEvent, HarmonicSkeleton
+from cadenzra.model.lyrics import SectionLyricDirective, SectionLyrics
 from cadenzra.model.primitives.ids import SectionId, VoiceId
 from cadenzra.model.primitives.meter import MeterSpec, simple_meter
 from cadenzra.model.primitives.pitch import Pitch
@@ -27,6 +30,8 @@ from cadenzra.model.spec import PieceSpec, VoiceSpec
 from cadenzra.model.state import PipelineState, voice_key
 from cadenzra.model.structure import DynamicsPlan, DynTarget, SectionPlan, StructurePlan
 from cadenzra.model.style import RhythmicCell, StylePack
+from cadenzra.model.voice import VoicePart
+from cadenzra.verification.lyrics import validate_section_lyrics
 from cadenzra.verification.voice import validate_voice
 
 RESULTS_DIR = Path("docs/harness-results")
@@ -100,6 +105,9 @@ ALTO = VoiceSpec(
     range_high=Pitch(step="C", octave=5),
     midi_program=52,
 )
+
+# The same voice, singing — lyric trials need a part that carries words.
+SINGER = ALTO.model_copy(update={"lyrics": True})
 
 _CELLS: dict[str, list[RhythmicCell]] = {
     "7/8 (2+2+3)": [
@@ -267,6 +275,127 @@ def _one_trial(
 
         messages += [item.message for item in feedback]
         state = state.model_copy(update={"feedback": feedback})
+
+    return TrialResult(converged=False, attempts=budget, messages=messages)
+
+
+# A fixed eight-bar setting for lyric trials: the music is held constant so
+# that what varies between trials is the words, which is the thing being
+# measured.
+_LYRIC_MUSIC = (
+    "d'4 e'4 f'4 g'4 |\na'2 g'4 f'4 |\ne'4 f'4 g'4 a'4 |\nd'1 |\n"
+    "f'4 e'4 d'4 c'4 |\nd'2 e'4 f'4 |\ng'4 f'4 e'4 d'4 |\nd'1 |"
+)
+
+
+def run_lyric_trials(
+    config: RunConfig,
+    *,
+    trials: int = 10,
+    budget: int = 3,
+    scheme: str = "AABB",
+    devices: Sequence[str] = (),
+    workdir: Path,
+) -> HarnessReport:
+    """Measure whether the words come back singable and in the stated scheme.
+
+    Both halves of the lyric contract, live: the compiler decides whether the
+    syllables fit the notes, and the rhyme module decides whether the scheme
+    the directive declared actually holds (docs/10).
+    """
+    runlog = open_run_log(config, workdir)
+    generator = build_generator(config, runlog)
+    renderer = build_renderer(config, runlog)
+    started = time.monotonic()
+
+    results = [
+        _one_lyric_trial(
+            generator,
+            renderer,
+            budget=budget,
+            scheme=scheme,
+            devices=list(devices),
+            workdir=workdir / f"trial-{trial:02d}",
+        )
+        for trial in range(trials)
+    ]
+
+    return HarnessReport(
+        capability="generate_lyrics",
+        variant=("devices" if devices else "plain"),
+        model=config.generation_model,
+        meter=scheme,
+        trials=results,
+        seconds=time.monotonic() - started,
+    )
+
+
+def _one_lyric_trial(
+    generator: object,
+    renderer: object,
+    *,
+    budget: int,
+    scheme: str,
+    devices: list[str],
+    workdir: Path,
+) -> TrialResult:
+    """One lyric loop, run to convergence or budget exhaustion."""
+    section = SectionPlan(
+        section_id="A",
+        bars=8,
+        meter=simple_meter(4, 4),
+        key="d minor",
+        tempo_bpm=88,
+        texture="homophonic",
+        dynamics=DynamicsPlan(start="mp"),
+        active_voices=[SINGER.voice_id],
+        intent="a plain verse",
+    )
+    directive = SectionLyricDirective(
+        section_id="A",
+        story_beat="a room left exactly as it was, and the person who is gone",
+        devices=devices,
+        rhyme_scheme=scheme,
+        relationship="solo",
+    )
+    part = VoicePart(
+        section_id="A", voice_id=SINGER.voice_id, lily_music=_LYRIC_MUSIC
+    )
+
+    messages: list[str] = []
+    rejected: SectionLyrics | None = None
+    feedback: list[FeedbackItem] = []
+
+    for attempt in range(1, budget + 1):
+        ctx = LyricsContext(
+            section=section,
+            directive=directive,
+            language="English",
+            story="someone keeps a room unchanged after a loss",
+            voice_ids=[SINGER.voice_id],
+            parts={SINGER.voice_id: part},
+            rejected=rejected,
+            feedback=feedback,
+        )
+        try:
+            lyrics = generator.generate_lyrics(ctx)  # type: ignore[attr-defined]
+        except CadenzraError as error:
+            return TrialResult(converged=False, attempts=attempt, error=str(error))
+
+        feedback = validate_section_lyrics(
+            lyrics,
+            directive,
+            section,
+            {SINGER.voice_id: part},
+            language="English",
+            renderer=renderer,  # type: ignore[arg-type]
+            workdir=workdir / f"attempt-{attempt}",
+        )
+        if not feedback:
+            return TrialResult(converged=True, attempts=attempt, messages=messages)
+
+        rejected = lyrics
+        messages += [item.message for item in feedback]
 
     return TrialResult(converged=False, attempts=budget, messages=messages)
 

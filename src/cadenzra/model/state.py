@@ -19,6 +19,7 @@ from cadenzra.model.artifacts import AssembledScore, AssembledSection, RenderedA
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.interpretation import InterpretationParams
+from cadenzra.model.lyrics import LyricPlan, SectionLyrics
 from cadenzra.model.motif import MotifLibrary
 from cadenzra.model.primitives.ids import SectionId, VoiceId
 from cadenzra.model.spec import PieceSpec
@@ -57,8 +58,13 @@ class PipelineState(BaseModel):
     style: StylePack | None = None
     structure: StructurePlan | None = None
     motifs: MotifLibrary | None = None
+    lyric_plan: LyricPlan | None = None
     harmony: dict[SectionId, HarmonicSkeleton] = Field(default_factory=dict)
     voices: dict[str, VoicePart] = Field(default_factory=dict)
+    # Keyed by section: lyrics are written for every singing voice at once, so
+    # the section is the unit that exists (docs/10). The rendered blocks are
+    # copied onto their `VoicePart`s, which is what assembly reads.
+    lyrics: dict[SectionId, SectionLyrics] = Field(default_factory=dict)
     sections: dict[SectionId, AssembledSection] = Field(default_factory=dict)
     score: AssembledScore | None = None
     interpretation: InterpretationParams | None = None

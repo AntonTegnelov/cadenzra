@@ -33,6 +33,7 @@ from cadenzra.notation.scaffold import (
     scaffold_fragment,
 )
 from cadenzra.rendering.lilypond import first_error
+from cadenzra.verification.lyrics import lyric_misalignment
 from cadenzra.verification.midi_analysis import extract_voice_notes
 
 SOURCE: Final = "validate_voice"
@@ -61,7 +62,6 @@ FORBIDDEN_COMMANDS: Final[frozenset[str]] = frozenset(
 )
 _COMMAND = re.compile(r"\\(?P<name>[A-Za-z]+)")
 
-_LYRIC_WARNING: Final = "cannot find"
 
 
 def validate_voice(
@@ -236,8 +236,13 @@ def _check_range(
 def _check_lyrics_align(
     part: VoicePart, section: SectionPlan, compiler_output: str
 ) -> list[FeedbackItem]:
-    """Syllable/note mismatches surface as compiler warnings (docs/05)."""
-    if part.lily_lyrics is None or _LYRIC_WARNING not in compiler_output:
+    """Syllable/note mismatches surface as compiler warnings (docs/05).
+
+    Words are normally written by the lyric layer, which runs this same check
+    against its own artifact (docs/10). This stays because a part may still
+    arrive carrying lyrics, and the compiler's answer is the same either way.
+    """
+    if part.lily_lyrics is None or not lyric_misalignment(compiler_output):
         return []
     return [
         _item(

@@ -27,21 +27,24 @@ from cadenzra.app.pipeline import (
     derive_style,
     generate_harmony,
     generate_motifs,
+    plan_lyrics,
     plan_structure,
 )
 from cadenzra.common.errors import (
     BudgetExhaustedError,
     CadenzraError,
     LilypondCompileError,
+    LLMOutputError,
 )
 from cadenzra.graph.routing import cheapest_level
 from cadenzra.interfaces.critique import AudioCritic, FeedbackRouter
 from cadenzra.interfaces.rendering import Synthesizer
 from cadenzra.model.artifacts import AssembledSection, RenderedArtifacts
-from cadenzra.model.contexts import MaterialInstruction, VoiceContext
+from cadenzra.model.contexts import LyricsContext, MaterialInstruction, VoiceContext
 from cadenzra.model.critique import CritiqueBrief
-from cadenzra.model.feedback import FeedbackItem
+from cadenzra.model.feedback import FeedbackItem, FeedbackLevel
 from cadenzra.model.interpretation import InterpretationParams
+from cadenzra.model.lyrics import SectionLyricDirective, SectionLyrics
 from cadenzra.model.primitives.ids import MotifId, SectionId, VoiceId
 from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.spec import PieceSpec
@@ -52,6 +55,7 @@ from cadenzra.notation.assemble import assemble_score, assemble_section
 from cadenzra.notation.scaffold import scaffold_fragment
 from cadenzra.performance.interpret import interpret_performance
 from cadenzra.verification.audio import validate_audio_dynamics
+from cadenzra.verification.lyrics import missing_devices, validate_section_lyrics
 from cadenzra.verification.midi_analysis import (
     NoteEvent,
     channel_track_invariant_ok,
@@ -85,9 +89,11 @@ def compose(spec: PieceSpec, services: ComposeServices) -> PipelineState:
     try:
         state = derive_style(state, services)
         state = plan_structure(state, services)
+        state = plan_lyrics(state, services)
         state = generate_motifs(state, services)
         state = generate_harmony(state, services)
         state = generate_voices(state, services)
+        state = generate_lyrics(state, services)
         state = assemble_and_verify(state, services)
         state = render(state, services)
         state = critique(state, services)
@@ -196,7 +202,23 @@ def _voice_to_convergence(
             rejected=rejected,
             feedback=feedback,
         )
-        part = services.generator.generate_voice(ctx)
+        try:
+            part = services.generator.generate_voice(ctx)
+        except LLMOutputError as error:
+            # Unparseable output is a rejection whose diagnosis is already
+            # written; the next attempt gets it verbatim rather than the run
+            # ending over something a retry could fix.
+            feedback = _malformed("voice", section.section_id, voice_id, error)
+            _log.warning(
+                "%s in section %s came back malformed on attempt %d/%d: %s",
+                voice_id,
+                section.section_id,
+                attempt,
+                services.budgets.voice,
+                error,
+            )
+            continue
+
         feedback = validate_voice(
             part,
             voice_spec,
@@ -231,6 +253,228 @@ def _voice_to_convergence(
         loop_key=attempt_key("voice", section.section_id, voice_id),
         attempts=services.budgets.voice,
     )
+
+
+def generate_lyrics(
+    state: PipelineState, services: ComposeServices, only: set[SectionId] | None = None
+) -> PipelineState:
+    """Write the words, one section at a time, after that section's music.
+
+    One call per section covering every singing voice — which is the entire
+    coordination mechanism (docs/10). Sequential across sections so each one
+    can read what has already been sung.
+
+    `only` re-runs named sections, for when cross-voice checks have replaced
+    the music the words were written to.
+    """
+    lyric_plan = state.lyric_plan
+    plan = state.structure
+    assert plan is not None
+    if lyric_plan is None:
+        return state
+
+    directives = lyric_plan.by_section
+    written: dict[SectionId, SectionLyrics] = dict(state.lyrics)
+    parts: dict[str, VoicePart] = dict(state.voices)
+
+    for section in plan.sections:
+        if only is not None and section.section_id not in only:
+            continue
+        directive = directives.get(section.section_id)
+        voice_ids = _singing_voices_in(section, state.spec)
+        if directive is None or not voice_ids:
+            continue
+
+        _log.info("writing words for section %s", section.section_id)
+        lyrics = _lyrics_to_convergence(
+            state,
+            services,
+            section,
+            directive,
+            voice_ids,
+            previous=[
+                written[item.section_id]
+                for item in plan.sections
+                if item.section_id in written and item.section_id != section.section_id
+            ],
+            refrain_source=written.get(directive.refrain_of)
+            if directive.refrain_of
+            else None,
+        )
+        written[section.section_id] = lyrics
+        # The words become part of the score through the part that carries
+        # them: assembly reads `VoicePart.lily_lyrics` and knows nothing about
+        # the lyric layer.
+        for voice in lyrics.voices:
+            key = voice_key(section.section_id, voice.voice_id)
+            parts[key] = parts[key].model_copy(
+                update={"lily_lyrics": voice.lily_lyrics}
+            )
+
+    return state.model_copy(update={"lyrics": written, "voices": parts})
+
+
+def _lyrics_to_convergence(
+    state: PipelineState,
+    services: ComposeServices,
+    section: SectionPlan,
+    directive: SectionLyricDirective,
+    voice_ids: list[VoiceId],
+    *,
+    previous: list[SectionLyrics],
+    refrain_source: SectionLyrics | None,
+) -> SectionLyrics:
+    """One section's words, regenerated against their feedback until they hold."""
+    lyric_plan = state.lyric_plan
+    assert lyric_plan is not None
+
+    feedback: list[FeedbackItem] = []
+    rejected: SectionLyrics | None = None
+
+    for attempt in range(1, services.budgets.lyric + 1):
+        ctx = LyricsContext(
+            section=section,
+            directive=directive,
+            language=lyric_plan.language,
+            story=lyric_plan.story,
+            voice_ids=voice_ids,
+            parts={
+                voice_id: state.voice_part(section.section_id, voice_id)
+                for voice_id in voice_ids
+            },
+            previous=previous,
+            refrain_source=refrain_source,
+            rejected=rejected,
+            feedback=feedback,
+        )
+        try:
+            lyrics = services.generator.generate_lyrics(ctx)
+        except LLMOutputError as error:
+            feedback = _malformed("lyric", section.section_id, None, error)
+            _log.warning(
+                "the words for section %s came back malformed on attempt %d/%d: %s",
+                section.section_id,
+                attempt,
+                services.budgets.lyric,
+                error,
+            )
+            continue
+
+        feedback = validate_section_lyrics(
+            lyrics,
+            directive,
+            section,
+            ctx.parts,
+            language=lyric_plan.language,
+            renderer=services.renderer,
+            workdir=services.workdir / f"{section.section_id}-lyrics-{attempt}",
+            refrain_source=refrain_source,
+        )
+        if not feedback:
+            # Craft is asked about only once the contracts hold, and asked
+            # blind: a reader told what to find reports finding it (docs/10).
+            # One nudge, not a budget: whether a device landed is a judgment,
+            # and spending every attempt on a judgment call would starve the
+            # checks that are actually decidable.
+            advisory = (
+                _observe_devices(services, lyrics, directive, section)
+                if attempt == 1
+                else []
+            )
+            if not advisory:
+                return lyrics
+            feedback = advisory
+        rejected = lyrics
+        _log.warning(
+            "the words for section %s failed on attempt %d/%d: %s",
+            section.section_id,
+            attempt,
+            services.budgets.lyric,
+            "; ".join(item.message for item in feedback),
+        )
+        if services.runlog is not None:
+            services.runlog.validation(
+                what=f"the words for section {section.section_id}",
+                loop_key=attempt_key("lyric", section.section_id, None),
+                attempt=attempt,
+                budget=services.budgets.lyric,
+                messages=[item.message for item in feedback],
+            )
+
+    raise BudgetExhaustedError(
+        f"the words for section {section.section_id} still fail after "
+        f"{services.budgets.lyric} attempts: "
+        + "; ".join(item.message for item in feedback),
+        loop_key=attempt_key("lyric", section.section_id, None),
+        attempts=services.budgets.lyric,
+    )
+
+
+def _malformed(
+    level: FeedbackLevel,
+    section_id: SectionId | None,
+    voice_id: VoiceId | None,
+    error: LLMOutputError,
+) -> list[FeedbackItem]:
+    """A parse failure, as routable feedback.
+
+    Quoted rather than paraphrased: the parser already knows exactly what was
+    wrong, and a guessed diagnosis sends the regeneration looking in the wrong
+    place (docs/05).
+    """
+    return [
+        FeedbackItem(
+            source="parser",
+            level=level,
+            section_id=section_id,
+            voice_id=voice_id,
+            message=str(error),
+        )
+    ]
+
+
+def _observe_devices(
+    services: ComposeServices,
+    lyrics: SectionLyrics,
+    directive: SectionLyricDirective,
+    section: SectionPlan,
+) -> list[FeedbackItem]:
+    """Ask a blind reader what craft is in the words, and compare here.
+
+    Advisory: a device nobody noticed is worth another attempt, but never a
+    veto — the deterministic checks are what decide (docs/05).
+    """
+    if not directive.devices:
+        return []
+
+    text = "\n\n".join(
+        f"{voice.voice_id}:\n" + voice.text for voice in lyrics.voices
+    )
+    observations = services.generator.observe_lyric_devices(text)
+    missing = missing_devices(directive, observations)
+    if not missing:
+        return []
+    return [
+        FeedbackItem(
+            source="observe_lyric_devices",
+            level="lyric",
+            section_id=section.section_id,
+            message=(
+                f"section {section.section_id} was written to use "
+                + ", ".join(missing)
+                + ", and a reader who did not know that found no sign of "
+                + ("them" if len(missing) > 1 else "it")
+            ),
+        )
+    ]
+
+
+def _singing_voices_in(section: SectionPlan, spec: PieceSpec) -> list[VoiceId]:
+    """The voices active in this section that sing."""
+    singing = {voice.voice_id for voice in spec.singing_voices}
+    return [
+        voice_id for voice_id in _voices_in(section, spec) if voice_id in singing
+    ]
 
 
 def _materials_for(
@@ -315,6 +559,11 @@ def assemble_and_verify(
         if not targets:
             break
         state = _rewrite_voices(state, services, feedback, targets)
+        # The words were written to music that no longer exists. Notation is
+        # the source of truth; everything downstream of it rebuilds (docs/10).
+        rewritten = {section_id for section_id, _ in targets}
+        if state.lyric_plan is not None:
+            state = generate_lyrics(state, services, only=rewritten)
 
     raise BudgetExhaustedError(
         "the assembled score still fails cross-voice checks after "
