@@ -54,9 +54,28 @@ class LayerServices:
 
 
 def derive_style(state: PipelineState, services: LayerServices) -> PipelineState:
-    """Interpret the style brief exactly once, for the whole run (docs/04)."""
+    """Interpret the style brief exactly once, for the whole run (docs/04).
+
+    Once, but not necessarily on the first try. This was the one layer with no
+    retry, and a single mistyped meter in a single rhythmic cell — "3/3" where
+    the piece allows 3/4 — ended a twelve-voice run before it had written a
+    note. The parser's complaint is a perfectly good instruction to the next
+    attempt.
+    """
     _log.info("deriving the style pack")
-    style: StylePack = services.generator.derive_style_pack(state.spec)
+
+    def generate(feedback: list[FeedbackItem]) -> StylePack:
+        del feedback  # the style brief is fixed; only malformed output retries
+        return services.generator.derive_style_pack(state.spec)
+
+    style = _converge(
+        generate,
+        lambda candidate: [],
+        budget=services.budgets.structure,
+        loop_key=attempt_key("structure", None, None),
+        what="the style pack",
+        runlog=services.runlog,
+    )
     return state.model_copy(
         update={"style": style, "interpretation": style.interpretation_defaults}
     )

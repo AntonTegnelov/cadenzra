@@ -341,3 +341,91 @@ def test_barlines_in_lyrics_are_removed_not_carried_through() -> None:
     assert "Clang crush break the dark Rise up sound the horn" in part.lily_lyrics
     # The music's own bar checks are untouched: they are the meter validator.
     assert part.lily_music.count("|") == 1
+
+
+def test_the_motif_prompt_asks_for_one_line_per_brief_not_one_per_voice() -> None:
+    """A brief carried by three voices came back as three per-voice variants —
+    `theme_lead`, `theme_keys`, `theme_harmony` — and the one theme the plan
+    asked for did not exist."""
+    from cadenzra.llm.prompts.structured import build_motif_prompt
+    from cadenzra.model.spec import PieceSpec
+    from cadenzra.model.structure import MaterialBrief, StructurePlan
+
+    brief = MaterialBrief(
+        motif_id="salt_declamation",
+        role="theme",
+        description="a declamatory line",
+        carrying_voices=["alto"],
+    )
+    spec = PieceSpec(
+        title="T",
+        style_prompt="x",
+        voices=[ALTO],
+        meters_allowed=[SEVEN_EIGHT],
+        target_minutes=1.0,
+    )
+    plan = StructurePlan(sections=[SECTION], materials_needed=[brief])
+
+    prompt = build_motif_prompt([brief], spec, StylePack(), plan)
+
+    assert "One id, one line, no variants." in prompt
+    assert "not how many versions to write" in prompt
+
+
+def test_the_motif_prompt_shows_a_bar_that_actually_fills_its_meter() -> None:
+    """The ranges above it are shown as `C3 (c) up to A4 (a')`, and a model
+    reading the scientific half writes `b3 4 fis4 8`. A worked example fixes
+    what the instruction alone does not — but only if the example is right."""
+    from cadenzra.llm.prompts.structured import _motif_example
+    from cadenzra.model.primitives.meter import MeterTerm
+
+    assert _motif_example(SEVEN_EIGHT).count("8") == 7
+    assert _motif_example(simple_meter(4, 4)) == "d'4 e'4 f'4 g'4 |"
+
+    additive = MeterSpec(
+        terms=[MeterTerm(numerator=3, denominator=4), MeterTerm(numerator=1, denominator=8)]
+    )
+    assert _motif_example(additive) == "d'4 e'4 f'4 g'8 |"
+
+
+def test_a_bad_style_pack_does_not_end_the_run() -> None:
+    """One mistyped meter in one rhythmic cell — "3/3" where the piece allows
+    3/4 — ended a twelve-voice run before it had written a note."""
+    from pathlib import Path
+
+    from cadenzra.app.config import RetryBudgets
+    from cadenzra.app.pipeline import LayerServices, derive_style
+    from cadenzra.common.errors import LLMOutputError
+    from cadenzra.model.spec import PieceSpec
+    from cadenzra.model.state import PipelineState
+
+    calls = {"n": 0}
+
+    class _Flaky:
+        def derive_style_pack(self, spec: object) -> StylePack:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise LLMOutputError("'3/3' is not one of this piece's meters (4/4)")
+            return StylePack(idioms=["second time lucky"])
+
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"derive_style should not call {name}")
+
+    spec = PieceSpec(
+        title="T",
+        style_prompt="x",
+        voices=[ALTO],
+        meters_allowed=[SEVEN_EIGHT],
+        target_minutes=1.0,
+    )
+    services = LayerServices(
+        generator=_Flaky(),  # type: ignore[arg-type]
+        renderer=None,  # type: ignore[arg-type]
+        workdir=Path("/tmp/unused"),
+        budgets=RetryBudgets(),
+    )
+
+    state = derive_style(PipelineState(spec=spec), services)
+
+    assert calls["n"] == 2
+    assert state.style is not None and state.style.idioms == ["second time lucky"]

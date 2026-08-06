@@ -21,6 +21,7 @@ from cadenzra.llm.prompts.surface import (
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.motif import Motif
+from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.spec import PieceSpec
 from cadenzra.model.structure import MaterialBrief, SectionPlan, StructurePlan
 from cadenzra.model.style import StylePack
@@ -148,7 +149,8 @@ def build_motif_prompt(
     """Write the material every later entry derives from."""
     first = _carrying_section(briefs, plan)
     blocks = [
-        "Write the recurring material for this piece.",
+        f"Write the recurring material for this piece: {len(briefs)} "
+        + ("theme." if len(briefs) == 1 else "themes."),
         "\n".join(
             f"  - {brief.motif_id} ({brief.role}): {brief.description}"
             + (
@@ -158,6 +160,13 @@ def build_motif_prompt(
             )
             for brief in briefs
         ),
+        # Without this, a brief carried by three voices comes back as three
+        # per-voice variants — `theme_lead`, `theme_keys`, `theme_harmony` —
+        # and the one theme the plan asked for does not exist.
+        "Write exactly one line of music for each of those, under exactly the "
+        "id it is listed with. The voices named as carrying it are the voices "
+        "it will later appear in, which tells you the range it has to fit — "
+        "not how many versions to write. One id, one line, no variants.",
     ]
 
     carriers = {
@@ -203,6 +212,21 @@ def build_motif_prompt(
     if notes:
         blocks.append(notes)
     return "\n\n".join(blocks)
+
+
+def _motif_example(meter: MeterSpec) -> str:
+    """One bar of plain notation in this meter, as a worked example.
+
+    Built from the meter rather than hard-coded so it is always a bar that
+    actually fills — an example that did not add up would teach the wrong
+    lesson more effectively than the instruction teaches the right one.
+    """
+    pitches = ["d'", "e'", "f'", "g'", "a'", "bes'", "c''", "d''"]
+    notes: list[str] = []
+    for term in meter.terms:
+        for _ in range(term.numerator):
+            notes.append(f"{pitches[len(notes) % len(pitches)]}{term.denominator}")
+    return " ".join(notes) + " |"
 
 
 def _carrying_section(briefs: list[MaterialBrief], plan: StructurePlan) -> SectionPlan:
