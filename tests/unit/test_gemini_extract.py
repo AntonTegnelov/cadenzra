@@ -111,3 +111,16 @@ def test_a_rate_limit_is_recognized_as_worth_waiting_for() -> None:
     assert _is_rate_limited(Exception("503 UNAVAILABLE"))
     assert not _is_rate_limited(Exception("400 INVALID_ARGUMENT"))
     assert not _is_rate_limited(LLMOutputError("the model answered without calling x"))
+
+
+def test_a_spent_budget_is_not_worth_waiting_for() -> None:
+    """A 429 also carries the one exhaustion waiting cannot fix. Sleeping on a
+    spending cap only adds a minute to a run that is already over."""
+    from cadenzra.llm.clients.gemini import _is_rate_limited
+
+    assert not _is_rate_limited(
+        Exception(
+            "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your "
+            "project has exceeded its monthly spending cap.'}}"
+        )
+    )

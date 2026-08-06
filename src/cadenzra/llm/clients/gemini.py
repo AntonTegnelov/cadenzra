@@ -228,6 +228,10 @@ _MIME_TYPES: Final[dict[str, str]] = {
 
 _RATE_LIMITED: Final = ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE")
 
+# A 429 also carries the one exhaustion that waiting cannot fix. Retrying a
+# spent budget just adds a minute of sleep to a run that is already over.
+_PERMANENT: Final = ("spending cap", "spend cap", "billing", "quota exceeded for quota metric")
+
 
 def _is_rate_limited(error: Exception) -> bool:
     """Whether waiting is likely to help.
@@ -236,6 +240,8 @@ def _is_rate_limited(error: Exception) -> bool:
     own error classes and the status is what is stable across versions.
     """
     text = str(error)
+    if any(marker in text.lower() for marker in _PERMANENT):
+        return False
     return any(marker in text for marker in _RATE_LIMITED)
 
 
