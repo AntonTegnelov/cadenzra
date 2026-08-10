@@ -235,6 +235,7 @@ def _harmony_for(
     previous_section: SectionPlan | None,
     previous_skeleton: HarmonicSkeleton | None,
     motif_notes: dict[MotifId, list[NoteEvent]] | None = None,
+    prior: list[FeedbackItem] | None = None,
 ) -> HarmonicSkeleton:
     """One section's skeleton, to convergence.
 
@@ -271,6 +272,48 @@ def _harmony_for(
         loop_key=attempt_key("harmony", section.section_id, None),
         what=f"the harmony for section {section.section_id}",
         runlog=services.runlog,
+        prior=prior,
+    )
+
+
+def regenerate_section_harmony(
+    state: PipelineState,
+    services: LayerServices,
+    section_id: SectionId,
+    prior: list[FeedbackItem],
+) -> PipelineState:
+    """One section's grid, regenerated against evidence no voice can fix.
+
+    The runtime loop-back for plan-level contradictions the plan-time check
+    cannot predict (a tonal answer's realization is not known until written):
+    the fix returns to the layer that owns the mistake, with the violation
+    quoted (CLAUDE.md). The regenerated grid passes back through the same
+    validators — including the entries check — before it is accepted.
+    """
+    plan = state.structure
+    assert plan is not None and state.style is not None
+    sections = plan.sections
+    index = next(
+        i for i, section in enumerate(sections) if section.section_id == section_id
+    )
+    previous_section = sections[index - 1] if index else None
+    previous_skeleton = (
+        state.harmony.get(previous_section.section_id)
+        if previous_section is not None
+        else None
+    )
+    skeleton = _harmony_for(
+        state,
+        services,
+        sections[index],
+        state.style,
+        previous_section=previous_section,
+        previous_skeleton=previous_skeleton,
+        motif_notes=analyzed_motifs(state, services.renderer, services.workdir),
+        prior=prior,
+    )
+    return state.model_copy(
+        update={"harmony": {**state.harmony, section_id: skeleton}}
     )
 
 
@@ -365,14 +408,18 @@ def _converge[T](
     loop_key: str,
     what: str,
     runlog: RunLog | None = None,
+    prior: list[FeedbackItem] | None = None,
 ) -> T:
     """Generate and validate until clean, or fail loudly when the budget runs out.
 
     A validator re-runs *in full* after every regeneration: there is no "fixed
     the reported issue, skip the rest" path, because a regeneration can
     introduce new errors anywhere in the artifact (docs/05).
+
+    `prior` seeds the first prompt with feedback from a later layer — the
+    regrid loop-back hands the assembly's evidence to the harmony layer here.
     """
-    feedback: list[FeedbackItem] = []
+    feedback: list[FeedbackItem] = list(prior or [])
     for attempt in range(1, budget + 1):
         try:
             candidate = generate(feedback)

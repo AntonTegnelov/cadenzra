@@ -31,6 +31,7 @@ from cadenzra.app.pipeline import (
     generate_motifs,
     plan_lyrics,
     plan_structure,
+    regenerate_section_harmony,
 )
 from cadenzra.app.summary import write_run_summary
 from cadenzra.common.errors import (
@@ -899,12 +900,34 @@ def assemble_and_verify(
     reason validation is scoped this way.
     """
     trajectory: list[int] = []
+    regridded: set[SectionId] = set()
     for attempt in range(1, services.budgets.section + 1):
         state = assemble(state, services)
         feedback = _verify_assembled(state, services)
         if not feedback:
             return state
-        _raise_if_unfixable(feedback, services)
+        unfixable = [item for item in feedback if item.routing == "unfixable"]
+        if unfixable:
+            # A pinned held tone indicts the grid, and the grid can move —
+            # once per section, with the violation quoted, before the loud
+            # path. Anything else routed unfixable (two prescribed lines in
+            # parallel) has no layer left to loop back to.
+            regriddable = [
+                item
+                for item in unfixable
+                if item.kind == "held_tone"
+                and item.section_id is not None
+                and item.section_id not in regridded
+            ]
+            if not regriddable or len(regriddable) < len(unfixable):
+                _raise_unfixable(unfixable, services)
+            state = _regrid(state, services, regriddable)
+            regridded |= {
+                item.section_id
+                for item in regriddable
+                if item.section_id is not None
+            }
+            continue
 
         # A repair sweep that does not shrink the set of distinct faults will
         # not shrink it next time either — measured: 263 → 63 → 66, with the
@@ -992,21 +1015,64 @@ def _prioritized(items: list[FeedbackItem]) -> list[FeedbackItem]:
     ]
 
 
-def _raise_if_unfixable(
-    feedback: list[FeedbackItem], services: ComposeServices
+def _regrid(
+    state: PipelineState, services: ComposeServices, items: list[FeedbackItem]
+) -> PipelineState:
+    """The grid moves where no voice can.
+
+    The named sections' harmony regenerates with the violations quoted and an
+    instruction the plan can act on; assembly then re-judges everything
+    against the new grid. The regenerated grid passes the entries check
+    before acceptance, so a model that cannot satisfy the pinned note fails
+    loudly in the harmony loop rather than bouncing back here.
+    """
+    by_section: dict[SectionId, list[FeedbackItem]] = {}
+    for item in items:
+        assert item.section_id is not None  # caller filtered
+        by_section.setdefault(item.section_id, []).append(item)
+    for section_id, section_items in by_section.items():
+        prior = [
+            item.model_copy(
+                update={
+                    "level": "harmony",
+                    "message": (
+                        item.message
+                        + ". The held note is prescribed by the plan and cannot "
+                        "change — choose this section's chords so the chord at "
+                        "that point contains it."
+                    ),
+                }
+            )
+            for item in section_items
+        ]
+        _log.warning(
+            "no voice is free to fix section %s; regenerating its harmony: %s",
+            section_id,
+            "; ".join(item.message for item in section_items),
+        )
+        if services.runlog is not None:
+            services.runlog.note(
+                f"The grid moves for section {section_id}",
+                "No voice named by these violations is free to move, so the "
+                "harmony regenerates with the evidence:\n"
+                + "; ".join(item.message for item in section_items),
+            )
+        state = regenerate_section_harmony(state, services, section_id, prior)
+    return state
+
+
+def _raise_unfixable(
+    unfixable: list[FeedbackItem], services: ComposeServices
 ) -> None:
     """A plan-level contradiction ends the run now, not after the budget.
 
     An item routed "unfixable" names only prescribed material on every side —
     the double-fugue's immortal D#4 spent three full repair sweeps on exactly
     this shape. `_targets_of` drops voiceless items by design, so without this
-    check the contradiction would burn the budget silently. The plan-time
-    grid check makes these rare; this is the loud path for the ones it cannot
-    predict.
+    check the contradiction would burn the budget silently. The regrid
+    loop-back handles the held-tone class; this is the loud path for the
+    rest, and for a section whose grid already moved once.
     """
-    unfixable = [item for item in feedback if item.routing == "unfixable"]
-    if not unfixable:
-        return
     detail = "; ".join(item.message for item in unfixable)
     if services.runlog is not None:
         services.runlog.note(

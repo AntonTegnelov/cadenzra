@@ -131,6 +131,114 @@ def test_two_prescribed_lines_in_parallel_fail_loudly_without_repair(
         assemble_and_verify(state, services)
 
 
+def _solo_grid_state(chord: str) -> PipelineState:
+    """One prescribed line holding ees'' over the given chord."""
+    held = "ees''2. ees''4 |"
+    solo = SECTION.model_copy(
+        update={
+            "active_voices": ["soprano"],
+            "material": [
+                MaterialEntry(
+                    motif_id="upper_subject",
+                    voice_id="soprano",
+                    bar=1,
+                    relation="exact",
+                )
+            ],
+        }
+    )
+    spec = PieceSpec(
+        title="Grid contradiction",
+        style_prompt="s",
+        voices=[UPPER],
+        meters_allowed=[FOUR_FOUR],
+        target_minutes=4 / 90,
+    )
+    return PipelineState(
+        spec=spec,
+        style=StylePack(),
+        structure=StructurePlan(sections=[solo]),
+        motifs=MotifLibrary(
+            motifs={
+                "upper_subject": Motif(
+                    motif_id="upper_subject", role="subject", lily_music=held
+                )
+            }
+        ),
+        harmony={
+            "A": HarmonicSkeleton(
+                section_id="A",
+                events=[
+                    HarmonicEvent(offset=Fraction(0), duration=Fraction(1), chord=chord)
+                ],
+            )
+        },
+        voices={
+            voice_key("A", "soprano"): VoicePart(
+                section_id="A", voice_id="soprano", lily_music=held
+            )
+        },
+    )
+
+
+def test_a_grid_contradiction_loops_back_to_the_harmony_layer(tmp_path: Path) -> None:
+    """The plan-time grid check cannot predict a tonal answer, so a
+    contradiction can reach assembly: the subject holds ees'' where the grid
+    says G7, and no voice is free to move. The fix belongs to the layer that
+    owns the mistake — the grid regenerates once, with the violation quoted,
+    before the run is allowed to go loud (CLAUDE.md: the fix loops back)."""
+    from tests.fakes.generator import ScriptedGenerator
+
+    fitting = HarmonicSkeleton(
+        section_id="A",
+        events=[HarmonicEvent(offset=Fraction(0), duration=Fraction(1), chord="Cm")],
+    )
+    generator = ScriptedGenerator(skeletons=[fitting])
+    services = ComposeServices(
+        generator=generator,
+        renderer=LilypondAdapter(),
+        workdir=tmp_path / "work",
+        budgets=RetryBudgets(),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+
+    result = assemble_and_verify(_solo_grid_state("G7"), services)
+
+    assert len(generator.harmony_contexts) == 1, "one regrid, not a repair sweep"
+    (ctx,) = generator.harmony_contexts
+    assert any("cannot change" in item.message for item in ctx.feedback), (
+        "the grid is told the held note is pinned"
+    )
+    assert result.harmony["A"] == fitting
+
+
+def test_a_regrid_that_cannot_satisfy_the_entry_still_goes_loud(
+    tmp_path: Path,
+) -> None:
+    """The regenerated grid is validated against the entries before it is
+    accepted; a model that keeps declaring G7 under a pinned ees'' exhausts
+    the harmony budget loudly instead of bouncing the contradiction back."""
+    from tests.fakes.generator import ScriptedGenerator
+
+    still_wrong = HarmonicSkeleton(
+        section_id="A",
+        events=[HarmonicEvent(offset=Fraction(0), duration=Fraction(1), chord="G7")],
+    )
+    generator = ScriptedGenerator(skeletons=[still_wrong])
+    services = ComposeServices(
+        generator=generator,
+        renderer=LilypondAdapter(),
+        workdir=tmp_path / "work",
+        budgets=RetryBudgets(),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+
+    with pytest.raises(BudgetExhaustedError, match="harmony for section A"):
+        assemble_and_verify(_solo_grid_state("G7"), services)
+
+
 def test_a_stalled_repair_loop_stops_at_the_plateau(tmp_path: Path) -> None:
     """263 → 63 → 66: the double-fugue's third sweep spent thirteen minutes
     proving what the second already had. When the distinct-violation count
