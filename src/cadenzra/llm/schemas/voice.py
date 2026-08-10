@@ -24,31 +24,23 @@ def write_part_schema(*, techniques: bool) -> dict[str, Any]:
     against the finished music and for every singer in the section at once
     (docs/10).
     """
+    # A per-part duration declaration was tried here and reverted the same
+    # day: on a 16-bar part the weak tier declared its 4-bar pattern instead
+    # of all 16 bars and burned whole budgets on declaration format without
+    # ever reaching the music. Single-bar declarations remain in
+    # `rewrite_bars`, where they demonstrably work; long parts converge
+    # through the repair loop instead.
     properties: dict[str, Any] = {
-        # Declared before the notes so the arithmetic is planned first — the
-        # parser sums each bar's declaration exactly, and a bar that does not
-        # add up is rejected before anything compiles.
-        "bar_durations": {
-            "type": "string",
-            "description": (
-                "Every duration in the part, bar by bar, in order, with bars "
-                "separated by | — e.g. '8 8 16 16 4. | 4 4 4.'. Plain values "
-                "with dots, or a real length like 1/6 for a tuplet note. Each "
-                "bar must sum to exactly one full bar of the meter: count "
-                "this out first, then write the notes to match."
-            ),
-        },
         "lily_music": {
             "type": "string",
             "description": (
                 "The music expression in LilyPond: absolute pitch, an explicit "
-                "duration on every note — exactly the durations declared in "
-                "bar_durations — a bar check | at the end of every bar, and no "
-                "structural commands."
+                "duration on every note, a bar check | at the end of every bar, "
+                "and no structural commands."
             ),
         },
     }
-    required = ["bar_durations", "lily_music"]
+    required = ["lily_music"]
 
     if techniques:
         properties["techniques"] = {

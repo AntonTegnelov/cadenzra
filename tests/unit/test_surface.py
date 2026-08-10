@@ -267,7 +267,7 @@ def test_the_schema_shows_only_the_fields_the_piece_needs() -> None:
     plain = write_part_schema(techniques=False)
     extended = write_part_schema(techniques=True)
 
-    assert set(plain["parameters"]["properties"]) == {"bar_durations", "lily_music"}
+    assert set(plain["parameters"]["properties"]) == {"lily_music"}
     assert "techniques" in extended["parameters"]["properties"]
     assert "lily_lyrics" not in extended["parameters"]["properties"]
 
@@ -283,15 +283,9 @@ def test_no_internal_type_ever_reaches_a_schema() -> None:
 
 def test_a_tool_call_parses_into_a_voice_part() -> None:
     part = parse_voice_part(
-        {
-            "lily_music": " a'8 a' b' b' c''4. | ",
-            "bar_durations": "8 8 8 8 4.",
-            "lily_lyrics": "Sing the mea -- sure",
-        },
+        {"lily_music": " a'8 a' b' b' c''4. | ", "lily_lyrics": "Sing the mea -- sure"},
         section_id="A",
         voice_id="alto",
-        bars=1,
-        meter=SEVEN_EIGHT,
     )
 
     assert part.lily_music == "a'8 a' b' b' c''4. |"
@@ -300,15 +294,9 @@ def test_a_tool_call_parses_into_a_voice_part() -> None:
 
 def test_lyrics_already_wrapped_are_left_alone() -> None:
     part = parse_voice_part(
-        {
-            "lily_music": "a'1 |",
-            "bar_durations": "1",
-            "lily_lyrics": "\\lyricmode { one two }",
-        },
+        {"lily_music": "a'1 |", "lily_lyrics": "\\lyricmode { one two }"},
         section_id="A",
         voice_id="alto",
-        bars=1,
-        meter=simple_meter(4, 4),
     )
 
     assert part.lily_lyrics == "\\lyricmode { one two }"
@@ -319,73 +307,22 @@ def test_a_response_without_notation_raises_rather_than_defaulting(
     payload: dict[str, object],
 ) -> None:
     with pytest.raises(LLMOutputError):
-        parse_voice_part(
-            payload, section_id="A", voice_id="alto", bars=1, meter=simple_meter(4, 4)
-        )
+        parse_voice_part(payload, section_id="A", voice_id="alto")
 
 
-def test_the_part_schema_demands_a_duration_declaration() -> None:
-    schema = write_part_schema(techniques=False)
-
-    properties = schema["parameters"]["properties"]
-    assert "bar_durations" in properties
-    assert "bar_durations" in schema["parameters"]["required"]
-    keys = list(properties)
-    assert keys.index("bar_durations") < keys.index("lily_music"), (
-        "the arithmetic is planned before the notes are written"
-    )
 
 
-def test_a_declaration_short_of_the_bar_is_rejected_with_both_sums() -> None:
-    """The Outro groove template summed to 15/16 in every full rewrite — the
-    part-level generation had no arithmetic gate at all, so the bad template
-    entered at the source and patches fought it bar by bar. The declaration
-    is checked per bar, before anything compiles."""
-    with pytest.raises(LLMOutputError, match="15/16") as caught:
-        parse_voice_part(
-            {"lily_music": "a'4 a' a' a'8. |", "bar_durations": "4 4 4 8."},
-            section_id="A",
-            voice_id="bass",
-            bars=1,
-            meter=simple_meter(4, 4),
-        )
-    assert "bar 1" in str(caught.value)
-
-
-def test_a_declaration_with_the_wrong_bar_count_is_rejected() -> None:
-    with pytest.raises(LLMOutputError, match="2 bars"):
-        parse_voice_part(
-            {"lily_music": "a'1 | a'1 |", "bar_durations": "1 | 1"},
-            section_id="A",
-            voice_id="bass",
-            bars=3,
-            meter=simple_meter(4, 4),
-        )
-
-
-def test_a_missing_declaration_is_rejected() -> None:
-    with pytest.raises(LLMOutputError, match="bar_durations"):
-        parse_voice_part(
-            {"lily_music": "a'1 |"},
-            section_id="A",
-            voice_id="bass",
-            bars=1,
-            meter=simple_meter(4, 4),
-        )
 
 
 def test_an_unknown_technique_raises_rather_than_being_dropped() -> None:
     with pytest.raises(LLMOutputError, match="does not know"):
         parse_voice_part(
             {
-                "lily_music": "a'1 |",
-                "bar_durations": "1",
+                "lily_music": "a'4 |",
                 "techniques": [{"technique": "col legno tratto", "from_bar": 1}],
             },
             section_id="A",
             voice_id="alto",
-            bars=1,
-            meter=simple_meter(4, 4),
         )
 
 
@@ -494,13 +431,10 @@ def test_barlines_in_lyrics_are_removed_not_carried_through() -> None:
     part = parse_voice_part(
         {
             "lily_music": "a'4 a' a' a' |",
-            "bar_durations": "4 4 4 4",
             "lily_lyrics": "Clang crush break the dark | Rise up sound the horn |",
         },
         section_id="A",
         voice_id="bass",
-        bars=1,
-        meter=simple_meter(4, 4),
     )
 
     assert part.lily_lyrics is not None

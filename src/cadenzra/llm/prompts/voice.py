@@ -36,8 +36,7 @@ No \\time, \\clef, \\key, \\tempo, \\score, \\new or any other structural comman
 — the score around your part supplies those.
   - Print the dynamics the section asks for, as ordinary LilyPond (\\p, \\<, \\ff).
   - Before writing any bar's notes, count its durations so they sum to exactly \
-one full bar of the meter, and declare that count where the tool asks for \
-durations. A bar that does not add up is rejected before it is even read."""
+one full bar of the meter — the last bar of a phrase deserves the recount most."""
 
 # The contract is piece-invariant, so it rides the system prompt: paying for
 # it in the user turn on every one of hundreds of voice calls was the cost
@@ -77,12 +76,7 @@ def build_voice_prompt(ctx: VoiceContext) -> str:
             "Harmony to write against:\n" + chord_chart(ctx.skeleton, ctx.section.meter)
         )
 
-    blocks.append(
-        f"Write the {ctx.voice.voice_id} part for this section: "
-        f"{ctx.section.bars} bars, so bar_durations declares "
-        f"{ctx.section.bars} groups separated by |, each summing to one bar "
-        f"of {ctx.section.meter.surface_string()}."
-    )
+    blocks.append(f"Write the {ctx.voice.voice_id} part for this section.")
     blocks.append(
         f"Range for {ctx.voice.voice_id}: {range_text(ctx.voice)}. "
         "Every note must fall inside it."
