@@ -204,6 +204,32 @@ def test_a_singing_voice_is_told_its_words_come_later() -> None:
     assert "lyricmode" not in singing
 
 
+def test_a_cross_meter_entry_teaches_the_tie() -> None:
+    """A 4/4 hook entering a 7/8 section can only keep every note value by
+    tying across barlines — live, the model approximated the rhythm instead
+    ("4 4 4." for "4 4 4 4") and failed the note-for-note check forever,
+    because nothing ever told it the technique. The instruction appears only
+    when the meters differ."""
+    hook = MaterialInstruction(
+        motif=Motif(
+            motif_id="hook", role="theme", lily_music="cis'4 e'4 fis'4 a'4 |"
+        ),
+        entry=MaterialEntry(motif_id="hook", voice_id="alto", bar=1, relation="exact"),
+        home_meter=simple_meter(4, 4),
+    )
+
+    cross = build_voice_prompt(_ctx(materials=[hook]))  # SECTION is 7/8
+    same = build_voice_prompt(
+        _ctx(
+            materials=[hook.model_copy(update={"home_meter": SEVEN_EIGHT})],
+        )
+    )
+
+    assert "tie" in cross.lower()
+    assert "4/4" in cross, "the motif's own meter is named"
+    assert "tie" not in same.lower(), "no tie lecture when the meters agree"
+
+
 def test_a_motif_travels_as_notation_with_an_instruction_not_an_id() -> None:
     """The id is bookkeeping for validators; the notes are for the composer
     (docs/03)."""

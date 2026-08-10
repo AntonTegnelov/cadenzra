@@ -13,6 +13,7 @@ from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.lyrics import SectionLyricDirective, SectionLyrics
 from cadenzra.model.motif import Motif
 from cadenzra.model.primitives.ids import VoiceId
+from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.spec import PieceSpec, VoiceSpec
 from cadenzra.model.structure import (
     MaterialBrief,
@@ -34,6 +35,10 @@ class MaterialInstruction(BaseModel, frozen=True):
 
     motif: Motif
     entry: MaterialEntry
+    # The meter the motif is written in. When it differs from the entry
+    # section's meter, the prompt must teach ties across barlines — the only
+    # way to keep every note value exact in the foreign meter.
+    home_meter: MeterSpec | None = None
 
 
 class MotifContext(BaseModel, frozen=True):

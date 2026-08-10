@@ -83,7 +83,7 @@ def build_voice_prompt(ctx: VoiceContext) -> str:
     )
 
     for instruction in ctx.materials:
-        blocks.append(material_text(instruction))
+        blocks.append(material_text(instruction, ctx.section.meter))
 
     if ctx.previous_tail:
         blocks.append(

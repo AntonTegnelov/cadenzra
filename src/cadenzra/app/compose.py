@@ -836,8 +836,15 @@ def _materials_for(
 ) -> list[MaterialInstruction]:
     if state.motifs is None:
         return []
+    plan = state.structure
     return [
-        MaterialInstruction(motif=state.motifs[entry.motif_id], entry=entry)
+        MaterialInstruction(
+            motif=state.motifs[entry.motif_id],
+            entry=entry,
+            home_meter=(
+                plan.meter_declaring(entry.motif_id) if plan is not None else None
+            ),
+        )
         for entry in section.material
         if entry.voice_id == voice_id and entry.motif_id in state.motifs
     ]

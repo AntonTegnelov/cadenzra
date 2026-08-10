@@ -88,7 +88,9 @@ def rhythmic_cells_text(style: StylePack, meter: MeterSpec) -> str:
     return "\n".join(lines)
 
 
-def material_text(instruction: MaterialInstruction) -> str:
+def material_text(
+    instruction: MaterialInstruction, section_meter: MeterSpec | None = None
+) -> str:
     """A motif entry as an instruction to a player, with the notes in full.
 
     Where the entry is transposed, the target starting pitch is computed and
@@ -112,6 +114,19 @@ def material_text(instruction: MaterialInstruction) -> str:
         "against the original, so every interval and every note value must match. "
         "Write the entry first, then continue the line around it."
     )
+    home = instruction.home_meter
+    if home is not None and section_meter is not None and home != section_meter:
+        # A 4/4 hook over a 7/8 section: keeping every note value exact in the
+        # foreign meter is only possible with ties, and a model never told the
+        # technique approximates the rhythm instead — which the entry check
+        # rejects forever.
+        lines.append(
+            f"The {motif.role} is written in {home.surface_string()}, but this "
+            f"section is in {section_meter.surface_string()}. Keep every note "
+            "value exactly as written and let the notes cross barlines: where "
+            "a barline falls mid-note, split it into two tied notes "
+            "(a quarter becomes 8~ | 8). The check hears tied notes as one."
+        )
     return "\n".join(lines)
 
 
