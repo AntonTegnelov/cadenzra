@@ -10,7 +10,9 @@ def rewrite_bars_schema(editable_bars: list[int]) -> dict[str, Any]:
 
     The enum on `bar` is the permission model made mechanical: a bar the
     schema does not offer cannot be rewritten, however persuasive the
-    feedback reads.
+    feedback reads. The enum values are strings because Gemini's schema
+    subset only permits `enum` on `type: string` — the parser turns them
+    back into the ints the rest of the pipeline speaks.
     """
     return {
         "name": REWRITE_BARS_TOOL,
@@ -28,8 +30,8 @@ def rewrite_bars_schema(editable_bars: list[int]) -> dict[str, Any]:
                         "type": "object",
                         "properties": {
                             "bar": {
-                                "type": "integer",
-                                "enum": editable_bars,
+                                "type": "string",
+                                "enum": [str(bar) for bar in editable_bars],
                                 "description": "The bar number this replaces.",
                             },
                             "lily_music": {

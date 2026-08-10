@@ -25,10 +25,16 @@ def parse_bar_patch(
     for entry in replacements:
         if not isinstance(entry, dict):
             raise LLMOutputError(f"a replacement is not an object: {entry!r}")
-        bar = entry.get("bar")
+        raw_bar = entry.get("bar")
         music = entry.get("lily_music")
-        if not isinstance(bar, int) or not isinstance(music, str) or not music.strip():
+        if not isinstance(raw_bar, str) or not isinstance(music, str) or not music.strip():
             raise LLMOutputError(f"a replacement is missing its bar or music: {entry!r}")
+        # The schema's enum is strings (Gemini permits enum only on strings);
+        # bar numbers are ints everywhere else.
+        try:
+            bar = int(raw_bar)
+        except ValueError:
+            raise LLMOutputError(f"a replacement names a non-numeric bar: {raw_bar!r}") from None
         if bar not in editable:
             raise LLMOutputError(
                 f"the patch rewrites bar {bar}, which it was not offered; "

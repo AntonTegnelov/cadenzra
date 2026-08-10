@@ -17,6 +17,7 @@ from cadenzra.app.config import RetryBudgets
 from cadenzra.common.errors import LLMOutputError
 from cadenzra.llm.parsers.patch import parse_bar_patch
 from cadenzra.llm.prompts.patch import build_patch_prompt
+from cadenzra.llm.schemas.patch import rewrite_bars_schema
 from cadenzra.model.contexts import PatchContext
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.motif import Motif, MotifLibrary
@@ -80,11 +81,26 @@ def test_splice_refuses_a_bar_that_does_not_exist() -> None:
         splice_bars(THREE_BARS, {7: "c'1 |"})
 
 
+# --- the schema ------------------------------------------------------------
+
+
+def test_the_schema_is_constructible_into_a_gemini_tool() -> None:
+    """Gemini's schema subset allows `enum` only on strings — an integer enum
+    passes every offline check and then crashes `types.Tool` on the first live
+    patch (orchestra, 20260810-2036). The vendor type is the only honest
+    oracle for what the wire accepts, so it is the one asserted against."""
+    from google.genai import types
+
+    tool = rewrite_bars_schema([7, 8, 9, 11, 12])
+
+    types.Tool(function_declarations=[tool])  # type: ignore[list-item]
+
+
 # --- the parser ------------------------------------------------------------
 
 
 def test_the_parser_returns_the_replacements_by_bar() -> None:
-    payload = {"replacements": [{"bar": 2, "lily_music": "g'2 g'2 |"}]}
+    payload = {"replacements": [{"bar": "2", "lily_music": "g'2 g'2 |"}]}
 
     assert parse_bar_patch(payload, [1, 2]) == {2: "g'2 g'2 |"}
 
@@ -92,20 +108,27 @@ def test_the_parser_returns_the_replacements_by_bar() -> None:
 def test_a_missing_trailing_bar_check_is_normalized_not_rejected() -> None:
     """Forgiving, never inventive: appending the `|` the contract requires is
     the same normalization the lyric parser applies to `\\lyricmode`."""
-    payload = {"replacements": [{"bar": 1, "lily_music": "g'2 g'2"}]}
+    payload = {"replacements": [{"bar": "1", "lily_music": "g'2 g'2"}]}
 
     assert parse_bar_patch(payload, [1]) == {1: "g'2 g'2 |"}
 
 
 def test_a_bar_outside_the_editable_set_is_rejected() -> None:
-    payload = {"replacements": [{"bar": 3, "lily_music": "g'1 |"}]}
+    payload = {"replacements": [{"bar": "3", "lily_music": "g'1 |"}]}
 
     with pytest.raises(LLMOutputError, match="bar 3"):
         parse_bar_patch(payload, [1, 2])
 
 
+def test_a_non_numeric_bar_is_rejected() -> None:
+    payload = {"replacements": [{"bar": "two", "lily_music": "g'1 |"}]}
+
+    with pytest.raises(LLMOutputError, match="two"):
+        parse_bar_patch(payload, [1, 2])
+
+
 def test_a_multi_bar_replacement_is_rejected() -> None:
-    payload = {"replacements": [{"bar": 1, "lily_music": "g'1 | a'1 |"}]}
+    payload = {"replacements": [{"bar": "1", "lily_music": "g'1 | a'1 |"}]}
 
     with pytest.raises(LLMOutputError, match="exactly one bar"):
         parse_bar_patch(payload, [1])
