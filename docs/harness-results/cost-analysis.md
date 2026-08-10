@@ -226,6 +226,8 @@ cost quality, so it should be measured, not assumed: run the existing
 `motifs` (4.5× ratio, one-line output, 2.5% of spend) as the cheap pilot before
 touching `voices`.
 
+   *Deferred by decision (2026-08-10): postponed for its quality risk. Revisit once `summary.json` makes the effect measurable against real usage numbers.*
+
 **4. Reorder prompts so the invariant part comes first. (addresses 65.7% of
 voice input)** Move the notation conventions block into the `write_part` system
 prompt where it belongs, then order the user prompt piece-wide → section-wide →
@@ -256,6 +258,8 @@ all spend, structurally eligible for a batch endpoint at roughly half price. The
 catch is latency: batch turnaround is unsuitable for the interactive
 compose-and-correct loop. It fits the *probe matrix* workflow exactly, though —
 running ten evaluation pieces overnight has no latency requirement.
+
+   *Deferred by decision (2026-08-10): postponed. Resume, replay and the voice-layer structural fixes land first; revisit once their effect on first-pass volume is measured.*
 
 ## Indirect levers, which are the largest ones here
 

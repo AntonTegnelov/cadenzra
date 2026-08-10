@@ -55,6 +55,7 @@ from cadenzra.model.lyrics import SectionLyricDirective, SectionLyrics
 from cadenzra.model.primitives.ids import SectionId, VoiceId
 from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.primitives.time import bar_containing
+from cadenzra.model.review import ReviewRequest
 from cadenzra.model.spec import PieceSpec
 from cadenzra.model.state import PipelineState, attempt_key, voice_key
 from cadenzra.model.structure import GroupRef, SectionPlan
@@ -609,6 +610,7 @@ def _lyrics_to_convergence(
             # checks that are actually decidable.
             advisory = (
                 _observe_devices(services, lyrics, directive, section)
+                + _review_craft(services, lyrics, section)
                 if attempt == 1
                 else []
             )
@@ -661,6 +663,47 @@ def _malformed(
             section_id=section_id,
             voice_id=voice_id,
             message=str(error),
+        )
+    ]
+
+
+def _review_craft(
+    services: ComposeServices,
+    lyrics: SectionLyrics,
+    section: SectionPlan,
+) -> list[FeedbackItem]:
+    """One blinded craft question about the finished words (docs/10).
+
+    The question names neither the theme, the devices nor the scheme — the
+    blinding that made the device observer's verdicts agree with a human
+    reading. Advisory like the device check: a rough line is worth one more
+    attempt, never a veto.
+    """
+    text = "\n".join(
+        f"{voice.voice_id}: " + " / ".join(line.text for line in voice.lines)
+        for voice in lyrics.voices
+    )
+    verdict = services.generator.review(
+        ReviewRequest(
+            question=(
+                "Read these lyrics as a stranger to the piece. Is any line "
+                "awkward to say or sing, unclear in its meaning, or out of "
+                "register with the lines around it? Name the line and what "
+                "stumbles."
+            ),
+            subject=text,
+        )
+    )
+    if verdict.acceptable:
+        return []
+    notes = verdict.reasons + verdict.suggestions
+    return [
+        FeedbackItem(
+            source="review",
+            level="lyric",
+            section_id=section.section_id,
+            kind="review",
+            message="a blind reading stumbled: " + "; ".join(notes or ["no detail given"]),
         )
     ]
 
