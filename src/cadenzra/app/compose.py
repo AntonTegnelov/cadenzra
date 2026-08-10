@@ -443,6 +443,7 @@ def _voice_to_convergence(
 
     while attempt < services.budgets.voice:
         cycle += 1
+        shown = {item.fingerprint() for item in feedback}
         editable = _editable_bars(feedback, rejected, section, protected)
         patching = bool(editable) and patch_attempts < _PATCH_ATTEMPTS
         if not patching:
@@ -516,8 +517,16 @@ def _voice_to_convergence(
                 # fails, or the part no longer even compiles.
                 attempt += 1
                 patch_attempts += 1
-        offered |= set(editable)
-        rejected = part
+            offered |= set(editable)
+            rejected = part
+        elif shown and {item.fingerprint() for item in feedback} == shown:
+            # The rewrite reproduced its own rejection — shown its old text
+            # under "change as little as possible", the model copies it,
+            # mistake included. The next attempt starts from scratch: the
+            # feedback is kept, the copyable text is not (docs/04).
+            rejected = None
+        else:
+            rejected = part
         _log.warning(
             "%s in section %s failed on attempt %d/%d: %s",
             voice_id,

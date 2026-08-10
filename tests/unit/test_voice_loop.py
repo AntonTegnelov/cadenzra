@@ -137,6 +137,36 @@ def test_each_attempt_spends_the_budget_for_its_own_loop_key(tmp_path: Path) -> 
     assert result["attempts"] == {attempt_key("voice", "A", "alto"): 3}
 
 
+def test_a_rewrite_that_changes_nothing_forfeits_its_copy(tmp_path: Path) -> None:
+    """Shown its rejected text under "change as little as possible", the lite
+    tier reproduces it nearly verbatim — mistake included; the orchestra run
+    burned three ~1400-token identical rewrites this way. When a full
+    rewrite's validation feedback carries exactly the fingerprints it was
+    shown, the next attempt goes from scratch: the lesson is kept, the
+    copyable text is not (docs/04's "regeneration from scratch", finally
+    literal)."""
+    from cadenzra.app.compose import ComposeServices, _voice_to_convergence
+
+    two_bars = f"{GOOD} {GOOD}"  # bar-count mismatch: not bar-scoped, no patching
+    generator = ScriptedGenerator([two_bars, two_bars, GOOD])
+    services = ComposeServices(
+        generator=generator,
+        renderer=RecordingRenderer(),
+        workdir=tmp_path,
+        budgets=RetryBudgets(),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+
+    part = _voice_to_convergence(_state(), services, SECTION, "alto")
+
+    first, second, third = generator.contexts
+    assert second.rejected is not None, "one minimal-repair chance with the text"
+    assert third.rejected is None, "an unchanged rejection forfeits the copy"
+    assert third.feedback, "the lesson still reaches the regeneration"
+    assert part.lily_music == GOOD
+
+
 def test_an_exhausted_budget_fails_loudly_with_its_evidence(tmp_path: Path) -> None:
     """The pipeline never completes by degrading the music: a stubborn part
     ends the run, naming what failed and why (docs/02, docs/08 principle 4)."""

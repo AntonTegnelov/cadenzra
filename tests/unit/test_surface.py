@@ -241,6 +241,28 @@ def test_a_regeneration_prompt_carries_the_rejection_and_the_rehearsal_notes() -
     assert "as little else as possible" in prompt
 
 
+def test_a_fresh_start_keeps_the_lesson_but_withholds_the_text() -> None:
+    """Shown its own rejected music, the model reproduces it nearly verbatim —
+    mistake included (orchestra: three ~1400-token identical rewrites). A
+    from-scratch regeneration carries the feedback without the copyable text,
+    and never asks for minimal change."""
+    from cadenzra.model.feedback import FeedbackItem
+
+    note = FeedbackItem(
+        source="validate_voice",
+        level="voice",
+        section_id="A",
+        voice_id="alto",
+        message="bar 1 does not fill 7/8 (2+2+3); it is off by 3/8",
+    )
+
+    prompt = build_voice_prompt(_ctx(rejected=None, feedback=[note]))
+
+    assert "off by 3/8" in prompt, "feedback reaches the regeneration"
+    assert "as little else as possible" not in prompt
+    assert "discarded" in prompt.lower()
+
+
 def test_the_schema_shows_only_the_fields_the_piece_needs() -> None:
     plain = write_part_schema(techniques=False)
     extended = write_part_schema(techniques=True)

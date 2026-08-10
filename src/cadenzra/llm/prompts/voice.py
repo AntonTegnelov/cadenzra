@@ -102,6 +102,8 @@ def build_voice_prompt(ctx: VoiceContext) -> str:
 
     if ctx.is_regeneration:
         blocks.append(_rehearsal_notes(ctx))
+    elif ctx.feedback:
+        blocks.append(_fresh_start_notes(ctx))
 
     if ctx.siblings:
         blocks.append(_siblings_block(ctx))
@@ -185,4 +187,20 @@ def _rehearsal_notes(ctx: VoiceContext) -> str:
         "This part was rejected. Here is what you wrote:\n\n"
         f"{ctx.rejected.lily_music}\n\n"
         f"Fix these problems, changing as little else as possible:\n{notes}"
+    )
+
+
+def _fresh_start_notes(ctx: VoiceContext) -> str:
+    """Feedback without the text it indicts.
+
+    A model shown its rejected music under "change as little as possible"
+    reproduces it nearly verbatim — mistake included. When the loop decides
+    the old text has stopped helping, the lesson still reaches the
+    regeneration; the copyable text does not (docs/04's regeneration from
+    scratch).
+    """
+    notes = "\n".join(f"  - {item.message}" for item in ctx.feedback)
+    return (
+        "A previous version of this part was rejected and has been discarded. "
+        f"Write the part afresh, avoiding its mistakes:\n{notes}"
     )
