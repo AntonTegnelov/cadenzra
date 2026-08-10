@@ -4,6 +4,7 @@ from cadenzra.model.contexts import (
     HarmonyContext,
     LyricsContext,
     MotifContext,
+    PatchContext,
     VoiceContext,
 )
 from cadenzra.model.feedback import FeedbackItem
@@ -39,6 +40,7 @@ class ScriptedGenerator:
         lyric_plans: list[LyricPlan] | None = None,
         lyrics: dict[str, SectionLyrics] | None = None,
         observations: list[DeviceObservation] | None = None,
+        patches: list[dict[int, str]] | None = None,
     ) -> None:
         self._fragments = list(fragments or [])
         self._by_voice = dict(by_voice or {})
@@ -50,8 +52,10 @@ class ScriptedGenerator:
         self._lyric_plans = list(lyric_plans or [])
         self._lyrics = dict(lyrics or {})
         self._observations = list(observations or [])
+        self._patches = list(patches or [])
 
         self.contexts: list[VoiceContext] = []
+        self.patch_contexts: list[PatchContext] = []
         self.lyrics_contexts: list[LyricsContext] = []
         self.lyric_plan_calls = 0
         self.motif_contexts: list[MotifContext] = []
@@ -106,6 +110,10 @@ class ScriptedGenerator:
             voice_id=ctx.voice.voice_id,
             lily_music=music,
         )
+
+    def patch_voice(self, ctx: PatchContext) -> dict[int, str]:
+        self.patch_contexts.append(ctx)
+        return _pick(self._patches, len(self.patch_contexts) - 1, what="patch")
 
     def generate_lyrics(self, ctx: LyricsContext) -> SectionLyrics:
         self.lyrics_contexts.append(ctx)

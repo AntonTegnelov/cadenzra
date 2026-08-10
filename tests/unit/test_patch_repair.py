@@ -1,0 +1,326 @@
+"""Patch repair: rewrite the flagged bars, splice deterministically.
+
+A repair used to regenerate the whole part — full output, full thinking, and
+license to break prescribed bars while "fixing" flagged ones. The patch
+surface offers only the editable bars; the splice is pure text with the same
+token semantics as `count_bar_checks`, because a second, divergent notion of
+"bar" is how off-by-one repairs are born.
+"""
+
+from fractions import Fraction
+from pathlib import Path
+
+import pytest
+
+from cadenzra.app.compose import ComposeServices, _voice_to_convergence
+from cadenzra.app.config import RetryBudgets
+from cadenzra.common.errors import LLMOutputError
+from cadenzra.llm.parsers.patch import parse_bar_patch
+from cadenzra.llm.prompts.patch import build_patch_prompt
+from cadenzra.model.contexts import PatchContext
+from cadenzra.model.feedback import FeedbackItem
+from cadenzra.model.motif import Motif, MotifLibrary
+from cadenzra.model.primitives.meter import simple_meter
+from cadenzra.model.primitives.pitch import Pitch
+from cadenzra.model.spec import PieceSpec, VoiceSpec
+from cadenzra.model.state import PipelineState, voice_key
+from cadenzra.model.structure import (
+    DynamicsPlan,
+    MaterialEntry,
+    SectionPlan,
+    StructurePlan,
+)
+from cadenzra.model.style import StylePack
+from cadenzra.model.voice import VoicePart
+from cadenzra.notation.scaffold import count_bar_checks, splice_bars, split_bars
+from tests.fakes.generator import ScriptedGenerator
+from tests.fakes.renderer import RecordingRenderer, clean, failing_bar_check
+
+# --- the splice ------------------------------------------------------------
+
+THREE_BARS = "c'4 d'4 e'4 f'4 |\ng'4 a'4 b'4 c''4 |\nc''1 |\n"
+
+
+def test_split_bars_round_trips_exactly() -> None:
+    bars = split_bars(THREE_BARS)
+
+    assert len(bars) == count_bar_checks(THREE_BARS) == 3
+    assert "".join(bars) == THREE_BARS
+
+
+def test_split_bars_honors_quoted_pipes_and_doubles() -> None:
+    tricky = 'c\'2 \\bar "|:" c\'2 |\nd\'1 ||\n'
+
+    bars = split_bars(tricky)
+
+    assert len(bars) == count_bar_checks(tricky) == 2
+    assert "".join(bars) == tricky
+
+
+def test_trailing_text_after_the_last_check_stays_with_the_last_bar() -> None:
+    dangling = "c'1 |\nd'1 | % a comment after the last barline"
+
+    bars = split_bars(dangling)
+
+    assert "".join(bars) == dangling
+    assert "% a comment" in bars[-1]
+
+
+def test_splice_replaces_exactly_the_named_bars() -> None:
+    spliced = splice_bars(THREE_BARS, {2: "g'2 g'2 |"})
+
+    bars = split_bars(spliced)
+    assert bars[0] == "c'4 d'4 e'4 f'4 |\n"
+    assert bars[1].strip() == "g'2 g'2 |"
+    assert bars[2] == "c''1 |\n"
+
+
+def test_splice_refuses_a_bar_that_does_not_exist() -> None:
+    with pytest.raises(ValueError, match="bar 7"):
+        splice_bars(THREE_BARS, {7: "c'1 |"})
+
+
+# --- the parser ------------------------------------------------------------
+
+
+def test_the_parser_returns_the_replacements_by_bar() -> None:
+    payload = {"replacements": [{"bar": 2, "lily_music": "g'2 g'2 |"}]}
+
+    assert parse_bar_patch(payload, [1, 2]) == {2: "g'2 g'2 |"}
+
+
+def test_a_missing_trailing_bar_check_is_normalized_not_rejected() -> None:
+    """Forgiving, never inventive: appending the `|` the contract requires is
+    the same normalization the lyric parser applies to `\\lyricmode`."""
+    payload = {"replacements": [{"bar": 1, "lily_music": "g'2 g'2"}]}
+
+    assert parse_bar_patch(payload, [1]) == {1: "g'2 g'2 |"}
+
+
+def test_a_bar_outside_the_editable_set_is_rejected() -> None:
+    payload = {"replacements": [{"bar": 3, "lily_music": "g'1 |"}]}
+
+    with pytest.raises(LLMOutputError, match="bar 3"):
+        parse_bar_patch(payload, [1, 2])
+
+
+def test_a_multi_bar_replacement_is_rejected() -> None:
+    payload = {"replacements": [{"bar": 1, "lily_music": "g'1 | a'1 |"}]}
+
+    with pytest.raises(LLMOutputError, match="exactly one bar"):
+        parse_bar_patch(payload, [1])
+
+
+def test_an_empty_patch_is_rejected() -> None:
+    with pytest.raises(LLMOutputError, match="no replacements"):
+        parse_bar_patch({"replacements": []}, [1])
+
+
+# --- the prompt (the feedback-reaches-prompt contract, patch edition) ------
+
+
+def _patch_ctx() -> PatchContext:
+    from cadenzra.model.primitives.meter import simple_meter
+    from cadenzra.model.primitives.pitch import Pitch
+    from cadenzra.model.spec import VoiceSpec
+    from cadenzra.model.structure import DynamicsPlan, SectionPlan
+    from cadenzra.model.voice import VoicePart
+
+    return PatchContext(
+        section=SectionPlan(
+            section_id="A",
+            bars=3,
+            meter=simple_meter(4, 4),
+            key="c major",
+            tempo_bpm=90,
+            texture="imitative",
+            dynamics=DynamicsPlan(start="mf"),
+            active_voices=["alto", "viola"],
+        ),
+        voice=VoiceSpec(
+            voice_id="alto",
+            kind="vocal",
+            range_low=Pitch(step="G", octave=3),
+            range_high=Pitch(step="C", octave=5),
+            midi_program=52,
+        ),
+        skeleton=None,
+        part=VoicePart(section_id="A", voice_id="alto", lily_music=THREE_BARS),
+        editable_bars=(2,),
+        feedback=[
+            FeedbackItem(
+                source="validate_section",
+                level="section",
+                section_id="A",
+                voice_id="alto",
+                message="alto and viola move in parallel octaves into bar 2, beat 1",
+            )
+        ],
+        siblings={"viola": "e'4 f'4 g'4 a'4 |"},
+    )
+
+
+def test_the_patch_prompt_carries_the_feedback_and_the_siblings() -> None:
+    prompt = build_patch_prompt(_patch_ctx())
+
+    assert "parallel octaves into bar 2" in prompt
+    assert "e'4 f'4 g'4 a'4" in prompt, "the line it must fit against is shown"
+    assert "only" in prompt.lower() and "bar 2" in prompt
+    assert "1: c'4 d'4 e'4 f'4 |" in prompt, "bars are numbered so 'bar 2' is findable"
+
+
+def test_the_patch_prompt_never_offers_a_prescribed_bar() -> None:
+    prompt = build_patch_prompt(_patch_ctx())
+
+    assert "bars 1" not in prompt.lower().replace("bars 1, 2, 3", "")
+    assert "Rewrite only bar 2" in prompt
+
+
+# --- the repair loop -------------------------------------------------------
+
+
+
+SEVEN_EIGHT = simple_meter(7, 8, [2, 2, 3])
+ALTO = VoiceSpec(
+    voice_id="alto",
+    kind="vocal",
+    range_low=Pitch(step="G", octave=3),
+    range_high=Pitch(step="C", octave=5),
+    midi_program=52,
+)
+GOOD = "a'8 a' b' b' c''4. |"
+BAD = "a'8 a' b' b' c''4 |"
+
+
+def _loop_section(*entries: MaterialEntry) -> SectionPlan:
+    return SectionPlan(
+        section_id="A",
+        bars=1,
+        meter=SEVEN_EIGHT,
+        key="d minor",
+        tempo_bpm=96,
+        texture="imitative",
+        dynamics=DynamicsPlan(start="mf"),
+        active_voices=["alto"],
+        material=list(entries),
+    )
+
+
+def _loop_state(section: SectionPlan, *, motifs: MotifLibrary | None = None) -> PipelineState:
+    return PipelineState(
+        spec=PieceSpec(
+            title="T",
+            style_prompt="s",
+            voices=[ALTO],
+            meters_allowed=[SEVEN_EIGHT],
+            target_minutes=1.0,
+        ),
+        style=StylePack(),
+        structure=StructurePlan(sections=[section]),
+        motifs=motifs,
+        voices={voice_key("A", "alto"): VoicePart(section_id="A", voice_id="alto", lily_music=BAD)},
+    )
+
+
+def _loop_services(
+    generator: ScriptedGenerator, renderer: RecordingRenderer, tmp_path: Path
+) -> ComposeServices:
+    return ComposeServices(
+        generator=generator,
+        renderer=renderer,
+        workdir=tmp_path,
+        budgets=RetryBudgets(),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+
+
+def _bar_scoped_item() -> FeedbackItem:
+    return FeedbackItem(
+        source="validate_section",
+        level="section",
+        section_id="A",
+        voice_id="alto",
+        location=Fraction(0),
+        kind="parallels",
+        message="alto and viola move in parallel octaves into bar 1, beat 1",
+    )
+
+
+def test_bar_scoped_feedback_repairs_by_patch_not_rewrite(tmp_path: Path) -> None:
+    generator = ScriptedGenerator(patches=[{1: GOOD}])
+    services = _loop_services(generator, RecordingRenderer([clean()]), tmp_path)
+    section = _loop_section()
+
+    part = _voice_to_convergence(
+        _loop_state(section), services, section, "alto", prior=[_bar_scoped_item()]
+    )
+
+    assert len(generator.patch_contexts) == 1
+    assert generator.calls == 0, "no full rewrite happened"
+    assert part.lily_music.strip() == GOOD
+    assert generator.patch_contexts[0].editable_bars == (1,)
+
+
+def test_a_prescribed_bar_is_never_offered_to_a_patch(tmp_path: Path) -> None:
+    """The flagged bar is the entry bar, so the patch surface is empty and the
+    loop goes straight to a full rewrite — which the entry check still guards."""
+    motifs = MotifLibrary(
+        motifs={"m": Motif(motif_id="m", role="subject", lily_music=GOOD)}
+    )
+    section = _loop_section(
+        MaterialEntry(motif_id="m", voice_id="alto", bar=1, relation="exact")
+    )
+    generator = ScriptedGenerator([GOOD])
+    services = _loop_services(generator, RecordingRenderer([clean()]), tmp_path)
+
+    _voice_to_convergence(
+        _loop_state(section, motifs=motifs),
+        services,
+        section,
+        "alto",
+        prior=[_bar_scoped_item()],
+    )
+
+    assert generator.patch_contexts == []
+    assert generator.calls == 1
+
+
+def test_two_failed_patches_fall_back_to_full_regeneration(tmp_path: Path) -> None:
+    """docs/04: "regeneration from scratch is the fallback when repair fails"
+    — promised, never implemented until now."""
+    generator = ScriptedGenerator([GOOD], patches=[{1: BAD}, {1: BAD}])
+    renderer = RecordingRenderer(
+        [failing_bar_check(line=9), failing_bar_check(line=9), clean()]
+    )
+    services = _loop_services(generator, renderer, tmp_path)
+    section = _loop_section()
+
+    part = _voice_to_convergence(
+        _loop_state(section), services, section, "alto", prior=[_bar_scoped_item()]
+    )
+
+    assert len(generator.patch_contexts) == 2
+    assert generator.calls == 1, "the third attempt was the full rewrite"
+    assert part.lily_music == GOOD
+
+
+def test_a_compile_failure_is_never_patched(tmp_path: Path) -> None:
+    """A part that does not compile has no trustworthy bar numbers to patch."""
+    item = FeedbackItem(
+        source="validate_voice",
+        level="voice",
+        section_id="A",
+        voice_id="alto",
+        message="the part does not compile: not a note name: me",
+    )
+    generator = ScriptedGenerator([GOOD])
+    services = _loop_services(generator, RecordingRenderer([clean()]), tmp_path)
+    section = _loop_section()
+
+    _voice_to_convergence(
+        _loop_state(section), services, section, "alto", prior=[item]
+    )
+
+    assert generator.patch_contexts == []
+    assert generator.calls == 1

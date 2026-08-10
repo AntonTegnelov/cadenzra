@@ -42,18 +42,25 @@ from cadenzra.graph.routing import cheapest_level
 from cadenzra.interfaces.critique import AudioCritic, FeedbackRouter
 from cadenzra.interfaces.rendering import Synthesizer
 from cadenzra.model.artifacts import AssembledSection, RenderedArtifacts
-from cadenzra.model.contexts import LyricsContext, MaterialInstruction, VoiceContext
+from cadenzra.model.contexts import (
+    LyricsContext,
+    MaterialInstruction,
+    PatchContext,
+    VoiceContext,
+)
 from cadenzra.model.critique import CritiqueBrief
 from cadenzra.model.feedback import FeedbackItem, FeedbackLevel
 from cadenzra.model.interpretation import InterpretationParams
 from cadenzra.model.lyrics import SectionLyricDirective, SectionLyrics
 from cadenzra.model.primitives.ids import SectionId, VoiceId
 from cadenzra.model.primitives.meter import MeterSpec
+from cadenzra.model.primitives.time import bar_containing
 from cadenzra.model.spec import PieceSpec
 from cadenzra.model.state import PipelineState, attempt_key, voice_key
 from cadenzra.model.structure import GroupRef, SectionPlan
 from cadenzra.model.voice import VoicePart
 from cadenzra.notation.assemble import assemble_score, assemble_section
+from cadenzra.notation.scaffold import count_bar_checks, splice_bars, split_bars
 from cadenzra.performance.interpret import interpret_performance
 from cadenzra.verification.audio import validate_audio_dynamics
 from cadenzra.verification.lyrics import missing_devices, validate_section_lyrics
@@ -254,6 +261,57 @@ def _voices_in(section: SectionPlan, spec: PieceSpec) -> list[VoiceId]:
     return [voice.voice_id for voice in spec.voices if voice.voice_id in named]
 
 
+# Failed patches before falling back to a full rewrite (docs/04: "regeneration
+# from scratch is the fallback when repair fails").
+_PATCH_ATTEMPTS = 2
+
+
+def _protected_bars(
+    state: PipelineState, section: SectionPlan, voice_id: VoiceId
+) -> set[int]:
+    """Bars pinned by the voice's declared entries — never offered to a patch.
+
+    The motif's bar count comes from its own bar checks — the sanctioned token
+    scan — so no compile is needed to know how many bars an entry occupies.
+    """
+    bars: set[int] = set()
+    if state.motifs is None:
+        return bars
+    for entry in section.material:
+        if entry.voice_id != voice_id or entry.motif_id not in state.motifs:
+            continue
+        length = max(1, count_bar_checks(state.motifs[entry.motif_id].lily_music))
+        bars |= set(range(entry.bar, entry.bar + length))
+    return bars
+
+
+def _editable_bars(
+    feedback: list[FeedbackItem],
+    rejected: VoicePart | None,
+    section: SectionPlan,
+    protected: set[int],
+) -> tuple[int, ...]:
+    """The bars a patch may rewrite, or () when only a full rewrite can help.
+
+    Empty when there is nothing to patch against, when any item is not
+    bar-scoped (a compile failure or parser complaint indicts the whole
+    part), or when every flagged bar is prescribed.
+    """
+    if rejected is None or not feedback:
+        return ()
+    flagged: set[int] = set()
+    for item in feedback:
+        if item.source == "parser" or item.location is None:
+            return ()
+        start = bar_containing(item.location, section.meter)
+        end = bar_containing(item.span[1], section.meter) if item.span else start
+        flagged |= set(range(start, end + 1))
+    total = count_bar_checks(rejected.lily_music)
+    return tuple(
+        bar for bar in sorted(flagged - protected) if 1 <= bar <= total
+    )
+
+
 def _voice_to_convergence(
     state: PipelineState,
     services: ComposeServices,
@@ -267,27 +325,58 @@ def _voice_to_convergence(
 
     `prior` seeds the first attempt with feedback from a *later* layer — the
     cross-voice checks — which the fragment on its own would always pass.
+
+    Bar-scoped feedback repairs by *patch*: only the flagged, unprescribed
+    bars are offered for rewriting, spliced deterministically into the
+    rejected part. That shrinks output to the changed bars and makes breaking
+    a prescribed entry mechanically impossible. After `_PATCH_ATTEMPTS`
+    failed patches, full regeneration is the fallback — which is what
+    docs/04 promised all along.
     """
     voice_spec = state.spec.voices_by_id[voice_id]
     feedback: list[FeedbackItem] = list(prior or [])
     rejected: VoicePart | None = (
         state.voices.get(voice_key(section.section_id, voice_id)) if prior else None
     )
+    protected = _protected_bars(state, section, voice_id)
+    patch_attempts = 0
 
     for attempt in range(1, services.budgets.voice + 1):
-        ctx = VoiceContext(
-            section=section,
-            voice=voice_spec,
-            style=state.style,  # type: ignore[arg-type]
-            skeleton=state.harmony.get(section.section_id),
-            materials=_materials_for(state, section, voice_id),
-            previous_tail=_previous_tail(state, section, voice_id),
-            rejected=rejected,
-            feedback=feedback,
-            siblings=siblings or {},
-        )
+        editable = _editable_bars(feedback, rejected, section, protected)
         try:
-            part = services.generator.generate_voice(ctx)
+            if editable and patch_attempts < _PATCH_ATTEMPTS:
+                assert rejected is not None  # _editable_bars requires it
+                patch_attempts += 1
+                patch = services.generator.patch_voice(
+                    PatchContext(
+                        section=section,
+                        voice=voice_spec,
+                        skeleton=state.harmony.get(section.section_id),
+                        part=rejected,
+                        editable_bars=editable,
+                        feedback=feedback,
+                        siblings=siblings or {},
+                    )
+                )
+                part = rejected.model_copy(
+                    update={
+                        "lily_music": splice_bars(rejected.lily_music, patch)
+                    }
+                )
+            else:
+                part = services.generator.generate_voice(
+                    VoiceContext(
+                        section=section,
+                        voice=voice_spec,
+                        style=state.style,  # type: ignore[arg-type]
+                        skeleton=state.harmony.get(section.section_id),
+                        materials=_materials_for(state, section, voice_id),
+                        previous_tail=_previous_tail(state, section, voice_id),
+                        rejected=rejected,
+                        feedback=feedback,
+                        siblings=siblings or {},
+                    )
+                )
         except LLMOutputError as error:
             # Unparseable output is a rejection whose diagnosis is already
             # written; the next attempt gets it verbatim rather than the run
@@ -590,8 +679,10 @@ def _previous_tail(
     for previous in reversed(order[:index]):
         part = state.voices.get(voice_key(previous, voice_id))
         if part is not None:
-            bars = part.lily_music.split("|")
-            return "|".join(bars[-(_SLIDING_WINDOW_BARS + 1) :]).strip()
+            # `split_bars`, not a naive split("|"): a quoted `\bar "|:"` would
+            # shift a naive count and hand the model the wrong bars.
+            bars = split_bars(part.lily_music)
+            return "".join(bars[-_SLIDING_WINDOW_BARS:]).strip()
     return None
 
 

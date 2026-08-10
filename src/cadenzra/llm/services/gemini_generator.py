@@ -14,6 +14,7 @@ from cadenzra.llm.parsers.lyrics import (
     parse_lyric_plan,
     parse_section_lyrics,
 )
+from cadenzra.llm.parsers.patch import parse_bar_patch
 from cadenzra.llm.parsers.structured import (
     parse_harmonic_skeleton,
     parse_motif_library,
@@ -30,6 +31,7 @@ from cadenzra.llm.prompts.lyrics import (
     build_lyric_plan_prompt,
     build_lyrics_prompt,
 )
+from cadenzra.llm.prompts.patch import PATCH_SYSTEM, build_patch_prompt
 from cadenzra.llm.prompts.structured import (
     HARMONY_SYSTEM,
     MOTIF_SYSTEM,
@@ -51,6 +53,7 @@ from cadenzra.llm.schemas.lyrics import (
     plan_lyrics_schema,
     write_lyrics_schema,
 )
+from cadenzra.llm.schemas.patch import REWRITE_BARS_TOOL, rewrite_bars_schema
 from cadenzra.llm.schemas.structured import (
     DERIVE_STYLE_TOOL,
     PLAN_STRUCTURE_TOOL,
@@ -68,6 +71,7 @@ from cadenzra.model.contexts import (
     HarmonyContext,
     LyricsContext,
     MotifContext,
+    PatchContext,
     VoiceContext,
 )
 from cadenzra.model.feedback import FeedbackItem
@@ -225,6 +229,20 @@ class GeminiGenerator:
             section_id=ctx.section.section_id,
             voice_id=ctx.voice.voice_id,
         )
+
+    def patch_voice(self, ctx: PatchContext) -> dict[int, str]:
+        payload = self._client_for(REWRITE_BARS_TOOL).call_tool(
+            system_prompt=PATCH_SYSTEM,
+            user_prompt=build_patch_prompt(ctx),
+            tool=rewrite_bars_schema(list(ctx.editable_bars)),
+            turn=TurnInfo(
+                label=REWRITE_BARS_TOOL,
+                section_id=ctx.section.section_id,
+                voice_id=ctx.voice.voice_id,
+                **_purpose_of(ctx.feedback, ctx.part),
+            ),
+        )
+        return parse_bar_patch(payload, list(ctx.editable_bars))
 
     def generate_lyrics(self, ctx: LyricsContext) -> SectionLyrics:
         payload = self._client_for(WRITE_LYRICS_TOOL).call_tool(

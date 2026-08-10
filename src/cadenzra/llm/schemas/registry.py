@@ -18,6 +18,7 @@ from cadenzra.llm.schemas.lyrics import (
     plan_lyrics_schema,
     write_lyrics_schema,
 )
+from cadenzra.llm.schemas.patch import REWRITE_BARS_TOOL, rewrite_bars_schema
 from cadenzra.llm.schemas.structured import (
     DERIVE_STYLE_TOOL,
     PLAN_STRUCTURE_TOOL,
@@ -46,6 +47,7 @@ REPLAYABLE_TOOLS: Final = frozenset(
         WRITE_LYRICS_TOOL,
         OBSERVE_DEVICES_TOOL,
         REVIEW_TOOL,
+        REWRITE_BARS_TOOL,
     }
 )
 
@@ -90,6 +92,10 @@ def schema_for(
         return write_lyrics_schema([voice.voice_id for voice in spec.singing_voices])
     if tool == OBSERVE_DEVICES_TOOL:
         return observe_devices_schema()
+    if tool == REWRITE_BARS_TOOL:
+        # The widest gate again: the original call offered only the flagged
+        # bars, which the log does not record — a replay may rewrite any bar.
+        return rewrite_bars_schema(list(range(1, 129)))
     if tool == REVIEW_TOOL:
         return review_schema()
     raise CadenzraError(f"no schema is registered for the tool {tool!r}")

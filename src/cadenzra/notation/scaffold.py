@@ -135,6 +135,64 @@ def count_bar_checks(text: str) -> int:
     return _count_bar_checks(text)
 
 
+def split_bars(lily_music: str) -> list[str]:
+    """The fragment cut at its bar checks, exactly: `"".join` restores it.
+
+    Same token semantics as `count_bar_checks` — quoted `|` ignored, `||`
+    one barline — because a second, divergent notion of "bar" is how an
+    off-by-one splice is born. Each segment carries its check and trailing
+    whitespace; anything after the final check stays with the last bar.
+    """
+    segments: list[str] = []
+    start = 0
+    in_string = False
+    index = 0
+    length = len(lily_music)
+    while index < length:
+        char = lily_music[index]
+        if char == '"':
+            in_string = not in_string
+            index += 1
+        elif char == "|" and not in_string:
+            index += 1
+            while index < length and lily_music[index] == "|":
+                index += 1
+            while index < length and lily_music[index] in " \t\n":
+                index += 1
+            segments.append(lily_music[start:index])
+            start = index
+        else:
+            index += 1
+    if start < length:
+        if segments:
+            segments[-1] += lily_music[start:]
+        else:
+            segments.append(lily_music[start:])
+    return segments
+
+
+def splice_bars(lily_music: str, replacements: dict[int, str]) -> str:
+    """The fragment with the named bars (1-based) replaced, all else verbatim.
+
+    Callers validate the replacement set; a bar number outside the fragment
+    here is a broken internal invariant, so it raises rather than clamps.
+    """
+    bars = split_bars(lily_music)
+    for bar in replacements:
+        if not 1 <= bar <= len(bars):
+            raise ValueError(
+                f"cannot replace bar {bar}: the fragment has {len(bars)} bars"
+            )
+    spliced = []
+    for number, segment in enumerate(bars, start=1):
+        if number in replacements:
+            tail = segment[len(segment.rstrip()) :] or "\n"
+            spliced.append(replacements[number].strip() + tail)
+        else:
+            spliced.append(segment)
+    return "".join(spliced)
+
+
 def _count_bar_checks(text: str) -> int:
     """Bar checks in `text`, ignoring the `|` inside other constructs.
 

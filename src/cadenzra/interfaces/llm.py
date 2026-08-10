@@ -12,6 +12,7 @@ from cadenzra.model.contexts import (
     HarmonyContext,
     LyricsContext,
     MotifContext,
+    PatchContext,
     VoiceContext,
 )
 from cadenzra.model.feedback import FeedbackItem
@@ -50,6 +51,8 @@ class GeneratorLLM(Protocol):
     def generate_harmony(self, ctx: HarmonyContext) -> HarmonicSkeleton: ...
 
     def generate_voice(self, ctx: VoiceContext) -> VoicePart: ...
+
+    def patch_voice(self, ctx: PatchContext) -> dict[int, str]: ...
 
     def generate_lyrics(self, ctx: LyricsContext) -> SectionLyrics: ...
 

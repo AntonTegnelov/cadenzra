@@ -114,3 +114,22 @@ class LyricsContext(BaseModel, frozen=True):
     refrain_source: SectionLyrics | None = None
     rejected: SectionLyrics | None = None
     feedback: list[FeedbackItem] = Field(default_factory=list)
+
+
+class PatchContext(BaseModel, frozen=True):
+    """Everything needed to rewrite only the flagged bars of one part.
+
+    `editable_bars` is the whole permission model: a bar not in it — a
+    prescribed entry, or simply an unflagged bar — is not offered, so a patch
+    cannot break what a validator did not complain about. That is the
+    structural fix for repairs that "fixed" a parallel by rewriting the
+    subject (the double-fugue's oscillation).
+    """
+
+    section: SectionPlan
+    voice: VoiceSpec
+    skeleton: HarmonicSkeleton | None = None
+    part: VoicePart
+    editable_bars: tuple[int, ...]
+    feedback: list[FeedbackItem] = Field(default_factory=list)
+    siblings: dict[VoiceId, str] = Field(default_factory=dict)

@@ -72,7 +72,7 @@ Validator feedback routes by table lookup — no intelligence needed. The router
 
 Retry budgets and the fail-loudly-with-partials contract are defined in [02](02-architecture-overview.md); validators themselves are stateless and know nothing about attempts. Two rules keep the loops honest:
 
-1. A validator re-runs *in full* after every regeneration — there is no "fixed the reported issue, skip the rest" path, because regeneration can introduce new errors anywhere in the fragment.
+1. A validator re-runs *in full* after every regeneration — there is no "fixed the reported issue, skip the rest" path, because regeneration can introduce new errors anywhere in the fragment. This holds for bar-scoped patch repairs too (2026-08-10): a spliced part re-runs `validate_voice` whole — the patch narrows what the model may *change*, never what gets *checked*.
 2. Feedback items from superseded attempts are cleared when their target regenerates; only current, unresolved feedback lives in state. History goes to the run log, not the working state.
 
 The run log this rule depends on now exists (`common/runlog.py`, under `out/<spec>/runs/<timestamp>/`). Every rejection is recorded there with its loop key, attempt number and validator messages, alongside the prompt that produced the rejected artifact and the model's reasoning about it — so the history state drops is reconstructable, which is the premise that made dropping it safe. See [07](07-project-structure.md) for the file layout.
