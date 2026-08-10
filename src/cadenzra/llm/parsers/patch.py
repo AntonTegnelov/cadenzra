@@ -3,17 +3,45 @@
 Shape only, as ever (docs/08): whether a replacement bar is good music is the
 compiler's and the validators' question, asked after the splice. What is
 judged here is the patch's own contract — named bars inside the offered set,
-exactly one bar of music each.
+exactly one bar of music each, and a duration declaration that sums to the
+bar.
+
+The declaration is the copy-reflex forcing function: shown its own 15/16
+cadence bar and told "1/16 short", a live model returned the same durations
+twice, once with a crescendo added. It cannot do that here — the declared
+arithmetic is summed exactly, and a copied wrong rhythm fails before anything
+compiles. The parser judges the declaration's arithmetic; the compiler stays
+the authority on the music itself.
 """
 
+from fractions import Fraction
 from typing import Any
 
 from cadenzra.common.errors import LLMOutputError
 from cadenzra.notation.scaffold import count_bar_checks
 
+_PLAIN_VALUES = frozenset({1, 2, 4, 8, 16, 32, 64, 128})
+
+
+def _duration_value(token: str) -> Fraction:
+    """One declared duration: "4", "8.", "16..", or a real length like "1/6"."""
+    if "/" in token:
+        try:
+            return Fraction(token)
+        except (ValueError, ZeroDivisionError):
+            raise LLMOutputError(f"unreadable duration {token!r}") from None
+    base = token.rstrip(".")
+    dots = len(token) - len(base)
+    if not base.isdigit() or int(base) not in _PLAIN_VALUES:
+        raise LLMOutputError(
+            f"unreadable duration {token!r}; declare plain values (4, 8., 16) "
+            "or a real length like 1/6 for a tuplet note"
+        )
+    return Fraction(1, int(base)) * (2 - Fraction(1, 2**dots))
+
 
 def parse_bar_patch(
-    payload: dict[str, Any], editable_bars: list[int]
+    payload: dict[str, Any], editable_bars: list[int], *, bar_length: Fraction
 ) -> dict[int, str]:
     """The replacements by bar number, or `LLMOutputError`."""
     replacements = payload.get("replacements")
@@ -27,14 +55,32 @@ def parse_bar_patch(
             raise LLMOutputError(f"a replacement is not an object: {entry!r}")
         raw_bar = entry.get("bar")
         music = entry.get("lily_music")
-        if not isinstance(raw_bar, str) or not isinstance(music, str) or not music.strip():
-            raise LLMOutputError(f"a replacement is missing its bar or music: {entry!r}")
+        durations = entry.get("durations")
+        if (
+            not isinstance(raw_bar, str)
+            or not isinstance(music, str)
+            or not music.strip()
+            or not isinstance(durations, str)
+            or not durations.strip()
+        ):
+            raise LLMOutputError(
+                f"a replacement is missing its bar, music or durations: {entry!r}"
+            )
         # The schema's enum is strings (Gemini permits enum only on strings);
         # bar numbers are ints everywhere else.
         try:
             bar = int(raw_bar)
         except ValueError:
             raise LLMOutputError(f"a replacement names a non-numeric bar: {raw_bar!r}") from None
+        total = sum(
+            (_duration_value(token) for token in durations.split()), Fraction(0)
+        )
+        if total != bar_length:
+            raise LLMOutputError(
+                f"the replacement for bar {bar} declares durations summing to "
+                f"{total} of a whole note, but one bar here holds {bar_length} — "
+                "recount, then write notes that fill the bar exactly"
+            )
         if bar not in editable:
             raise LLMOutputError(
                 f"the patch rewrites bar {bar}, which it was not offered; "

@@ -242,7 +242,11 @@ class GeminiGenerator:
                 **_purpose_of(ctx.feedback, ctx.part),
             ),
         )
-        return parse_bar_patch(payload, list(ctx.editable_bars))
+        return parse_bar_patch(
+            payload,
+            list(ctx.editable_bars),
+            bar_length=ctx.section.meter.bar_length,
+        )
 
     def generate_lyrics(self, ctx: LyricsContext) -> SectionLyrics:
         payload = self._client_for(WRITE_LYRICS_TOOL).call_tool(

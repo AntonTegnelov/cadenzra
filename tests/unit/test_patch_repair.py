@@ -98,45 +98,89 @@ def test_the_schema_is_constructible_into_a_gemini_tool() -> None:
 
 # --- the parser ------------------------------------------------------------
 
+FOUR_FOUR_BAR = Fraction(1)
+
+
+def _payload(bar: str, music: str, durations: str) -> dict[str, object]:
+    return {
+        "replacements": [{"bar": bar, "lily_music": music, "durations": durations}]
+    }
+
 
 def test_the_parser_returns_the_replacements_by_bar() -> None:
-    payload = {"replacements": [{"bar": "2", "lily_music": "g'2 g'2 |"}]}
+    payload = _payload("2", "g'2 g'2 |", "2 2")
 
-    assert parse_bar_patch(payload, [1, 2]) == {2: "g'2 g'2 |"}
+    assert parse_bar_patch(payload, [1, 2], bar_length=FOUR_FOUR_BAR) == {2: "g'2 g'2 |"}
 
 
 def test_a_missing_trailing_bar_check_is_normalized_not_rejected() -> None:
     """Forgiving, never inventive: appending the `|` the contract requires is
     the same normalization the lyric parser applies to `\\lyricmode`."""
-    payload = {"replacements": [{"bar": "1", "lily_music": "g'2 g'2"}]}
+    payload = _payload("1", "g'2 g'2", "2 2")
 
-    assert parse_bar_patch(payload, [1]) == {1: "g'2 g'2 |"}
+    assert parse_bar_patch(payload, [1], bar_length=FOUR_FOUR_BAR) == {1: "g'2 g'2 |"}
+
+
+def test_a_declaration_that_does_not_sum_to_the_bar_is_rejected_with_both_numbers() -> None:
+    """The copy-reflex forcing function: shown its own 15/16 cadence bar and
+    told \"1/16 short\", the live model returned the same durations twice,
+    once with a crescendo added. The declaration channel is where the
+    arithmetic must be shown, and a copied wrong rhythm cannot pass it —
+    the parser does the exact-fraction sum the model cannot be trusted to."""
+    payload = _payload("1", "e,4 e,8 e,16 e,8 e,8 e,4 |", "4 8 16 8 8 4")
+
+    with pytest.raises(LLMOutputError, match="15/16") as caught:
+        parse_bar_patch(payload, [1], bar_length=FOUR_FOUR_BAR)
+    assert "sum" in str(caught.value)
+
+
+def test_dotted_and_tuplet_durations_declare_their_real_length() -> None:
+    payload = _payload(
+        "1", "g'8. g'16 \\tuplet 3/2 { g'4 g' g' } g'4 |", "8. 16 1/6 1/6 1/6 4"
+    )
+
+    assert parse_bar_patch(payload, [1], bar_length=FOUR_FOUR_BAR) == {
+        1: "g'8. g'16 \\tuplet 3/2 { g'4 g' g' } g'4 |"
+    }
+
+
+def test_a_missing_or_unreadable_declaration_is_rejected() -> None:
+    with pytest.raises(LLMOutputError, match="durations"):
+        parse_bar_patch(
+            {"replacements": [{"bar": "1", "lily_music": "g'1 |"}]},
+            [1],
+            bar_length=FOUR_FOUR_BAR,
+        )
+    with pytest.raises(LLMOutputError, match="quaver"):
+        parse_bar_patch(
+            _payload("1", "g'1 |", "quaver quaver"), [1], bar_length=FOUR_FOUR_BAR
+        )
 
 
 def test_a_bar_outside_the_editable_set_is_rejected() -> None:
-    payload = {"replacements": [{"bar": "3", "lily_music": "g'1 |"}]}
+    payload = _payload("3", "g'1 |", "1")
 
     with pytest.raises(LLMOutputError, match="bar 3"):
-        parse_bar_patch(payload, [1, 2])
+        parse_bar_patch(payload, [1, 2], bar_length=FOUR_FOUR_BAR)
 
 
 def test_a_non_numeric_bar_is_rejected() -> None:
-    payload = {"replacements": [{"bar": "two", "lily_music": "g'1 |"}]}
+    payload = _payload("two", "g'1 |", "1")
 
     with pytest.raises(LLMOutputError, match="two"):
-        parse_bar_patch(payload, [1, 2])
+        parse_bar_patch(payload, [1, 2], bar_length=FOUR_FOUR_BAR)
 
 
 def test_a_multi_bar_replacement_is_rejected() -> None:
-    payload = {"replacements": [{"bar": "1", "lily_music": "g'1 | a'1 |"}]}
+    payload = _payload("1", "g'1 | a'1 |", "1")
 
     with pytest.raises(LLMOutputError, match="exactly one bar"):
-        parse_bar_patch(payload, [1])
+        parse_bar_patch(payload, [1], bar_length=FOUR_FOUR_BAR)
 
 
 def test_an_empty_patch_is_rejected() -> None:
     with pytest.raises(LLMOutputError, match="no replacements"):
-        parse_bar_patch({"replacements": []}, [1])
+        parse_bar_patch({"replacements": []}, [1], bar_length=FOUR_FOUR_BAR)
 
 
 # --- the prompt (the feedback-reaches-prompt contract, patch edition) ------

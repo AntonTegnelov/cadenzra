@@ -34,15 +34,27 @@ def rewrite_bars_schema(editable_bars: list[int]) -> dict[str, Any]:
                                 "enum": [str(bar) for bar in editable_bars],
                                 "description": "The bar number this replaces.",
                             },
+                            "durations": {
+                                "type": "string",
+                                "description": (
+                                    "Every duration in the new bar, in order, "
+                                    "space-separated — e.g. '8 8 16 16 4.'. "
+                                    "Plain values with dots, or a real length "
+                                    "like 1/6 for a tuplet note. They must sum "
+                                    "to exactly one full bar: count this out "
+                                    "first, then write the notes to match."
+                                ),
+                            },
                             "lily_music": {
                                 "type": "string",
                                 "description": (
-                                    "The complete new bar, ending with its "
+                                    "The complete new bar, using exactly the "
+                                    "durations declared above, ending with its "
                                     "bar check |."
                                 ),
                             },
                         },
-                        "required": ["bar", "lily_music"],
+                        "required": ["bar", "durations", "lily_music"],
                     },
                 }
             },
