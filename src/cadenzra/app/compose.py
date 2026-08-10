@@ -14,7 +14,7 @@ silently corrupted score is the one output this system exists to prevent
 
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -141,6 +141,8 @@ def compose(
         state = render(state, services)
         state = critique(state, services)
     except CadenzraError as error:
+        if error.partial_state is not None:
+            state = error.partial_state
         if services.runlog is not None:
             services.runlog.note("The run failed", str(error))
         _write_partials(state, services.output_dir, run_dir=_run_dir_of(services))
@@ -260,32 +262,55 @@ def _write_section_voices(
     """
     if _is_contrapuntal(section.texture):
         parts: list[VoicePart] = []
-        for voice_id in _entry_order(section, voice_ids):
-            part = _voice_to_convergence(
-                state,
-                services,
-                section,
-                voice_id,
-                siblings=_siblings_of(state, section, voice_id),
-            )
-            parts.append(part)
-            state = state.model_copy(
-                update={
-                    "voices": state.voices
-                    | {voice_key(section.section_id, voice_id): part}
-                }
-            )
+        try:
+            for voice_id in _entry_order(section, voice_ids):
+                part = _voice_to_convergence(
+                    state,
+                    services,
+                    section,
+                    voice_id,
+                    siblings=_siblings_of(state, section, voice_id),
+                )
+                parts.append(part)
+                state = state.model_copy(
+                    update={
+                        "voices": state.voices
+                        | {voice_key(section.section_id, voice_id): part}
+                    }
+                )
+        except CadenzraError as error:
+            # The lines already on the page are salvage, not waste.
+            error.partial_state = state
+            raise
         return parts
 
     with ThreadPoolExecutor(max_workers=max(1, len(voice_ids))) as pool:
-        return list(
-            pool.map(
-                lambda voice_id: _voice_to_convergence(
-                    state, services, section, voice_id
-                ),
-                voice_ids,
+        futures = {
+            pool.submit(_voice_to_convergence, state, services, section, voice_id): (
+                voice_id
             )
-        )
+            for voice_id in voice_ids
+        }
+        converged: list[VoicePart] = []
+        first_error: CadenzraError | None = None
+        for future in as_completed(futures):
+            try:
+                converged.append(future.result())
+            except CadenzraError as error:
+                if first_error is None:
+                    first_error = error
+        if first_error is not None:
+            first_error.partial_state = state.model_copy(
+                update={
+                    "voices": state.voices
+                    | {
+                        voice_key(section.section_id, part.voice_id): part
+                        for part in converged
+                    }
+                }
+            )
+            raise first_error
+        return converged
 
 
 def _entry_order(section: SectionPlan, voice_ids: list[VoiceId]) -> list[VoiceId]:

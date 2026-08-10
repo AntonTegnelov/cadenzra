@@ -140,6 +140,71 @@ def test_only_the_missing_voice_is_generated(tmp_path: Path) -> None:
     assert result.voices[voice_key("A", "soprano")].lily_music == GOOD
 
 
+def test_a_failed_run_keeps_the_voices_that_converged(tmp_path: Path) -> None:
+    """The alto that converged must not be re-bought because the soprano ran
+    out its budget — the partials a failed run writes are exactly what the
+    next --resume feeds on. (Live, the orchestra run re-generated a passing
+    cello on every roll of a failing contrabass.)"""
+    from cadenzra.app.compose import compose
+    from cadenzra.common.errors import BudgetExhaustedError
+
+    bad = GOOD + " " + GOOD  # two bars for a one-bar section: fails every attempt
+    generator = ScriptedGenerator(
+        by_voice={("A", "alto"): GOOD, ("A", "soprano"): bad}
+    )
+    services = ComposeServices(
+        generator=generator,
+        renderer=RecordingRenderer(),
+        workdir=tmp_path / "work",
+        budgets=RetryBudgets(),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+
+    with pytest.raises(BudgetExhaustedError):
+        compose(SPEC, services, initial=_scaffolded())
+
+    saved = PipelineState.model_validate_json(
+        (tmp_path / "state.json").read_text(encoding="utf-8")
+    )
+    assert voice_key("A", "alto") in saved.voices, "the converged voice survives"
+    assert voice_key("A", "soprano") not in saved.voices
+
+
+def test_a_failed_contrapuntal_section_keeps_the_lines_already_on_the_page(
+    tmp_path: Path,
+) -> None:
+    """Same contract on the sequential path: the subject written before the
+    failing answer is salvage, not waste."""
+    from cadenzra.app.compose import compose
+    from cadenzra.common.errors import BudgetExhaustedError
+
+    bad = GOOD + " " + GOOD
+    imitative = SECTION.model_copy(update={"texture": "imitative"})
+    state = _scaffolded().model_copy(
+        update={"structure": StructurePlan(sections=[imitative])}
+    )
+    generator = ScriptedGenerator(
+        by_voice={("A", "alto"): GOOD, ("A", "soprano"): bad}
+    )
+    services = ComposeServices(
+        generator=generator,
+        renderer=RecordingRenderer(),
+        workdir=tmp_path / "work",
+        budgets=RetryBudgets(),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+
+    with pytest.raises(BudgetExhaustedError):
+        compose(SPEC, services, initial=state)
+
+    saved = PipelineState.model_validate_json(
+        (tmp_path / "state.json").read_text(encoding="utf-8")
+    )
+    assert voice_key("A", "alto") in saved.voices, "the finished line survives"
+
+
 def test_the_loader_round_trips_and_clears_downstream_residue(tmp_path: Path) -> None:
     """Assembly, render and critique always re-run: their inputs may include
     freshly generated voices, so stale sections or scores would be lies."""

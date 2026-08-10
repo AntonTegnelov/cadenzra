@@ -5,9 +5,23 @@ a feedback item) needs to act on it. Anything else that escapes is a bug and
 should crash with a traceback, on purpose (docs/08, principle 4).
 """
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cadenzra.model.state import PipelineState
+
 
 class CadenzraError(Exception):
-    """Base for every error the CLI is willing to catch and report."""
+    """Base for every error the CLI is willing to catch and report.
+
+    `partial_state` is attached by an accumulating layer before the error
+    escapes: the pipeline state as of the last slice that converged. Without
+    it, a failure on the last voice of the last section would discard every
+    voice the run had paid for — the partials a failed run writes are exactly
+    what the next `--resume` feeds on.
+    """
+
+    partial_state: PipelineState | None = None
 
 
 class LilypondCompileError(CadenzraError):
