@@ -269,6 +269,26 @@ def test_a_refrain_may_reprise_and_then_carry_on() -> None:
     ) == []
 
 
+def test_a_refrain_may_redistribute_its_words_between_voices() -> None:
+    """A chorus where the harmony voice comes back doubling the lead is
+    bringing the words back — more of them — and checking each voice against
+    only its own earlier line called that a failure."""
+    source = _lyrics(
+        "A", soprano=["the light falls slow"], alto=["and I am still"]
+    )
+    doubled = _lyrics(
+        "C", soprano=["the light falls slow"], alto=["the light falls slow"]
+    )
+
+    assert _validate(
+        doubled,
+        SectionLyricDirective(
+            section_id="C", story_beat="return", refrain_of="A", relationship="unison"
+        ),
+        refrain_source=source,
+    ) == []
+
+
 def test_a_refrain_that_returns_unchanged_passes() -> None:
     source = _lyrics("A", soprano=["the light falls slow"])
     same = _lyrics("C", soprano=["The light falls slow"])  # casing is not a change

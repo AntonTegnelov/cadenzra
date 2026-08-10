@@ -10,6 +10,7 @@ answer under its floor; catching that here costs one check, catching it after
 the sections are written costs regenerating them (docs/05).
 """
 
+import re
 from pathlib import Path
 from typing import Final
 
@@ -17,6 +18,7 @@ import mido
 
 from cadenzra.common.errors import LilypondCompileError
 from cadenzra.interfaces.rendering import ScoreRenderer
+from cadenzra.model.artifacts import BarCheckWarning
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.motif import Motif, MotifLibrary
 from cadenzra.model.primitives.meter import MeterSpec
@@ -64,11 +66,16 @@ def validate_motifs(
 
     for motif_id, motif in sorted(motifs.motifs.items()):
         meter = _meter_for(motif_id, plan, spec)
-        notes, compiler_output = _compiled_pitches(
+        notes, compiler_output, bar_checks = _compiled_pitches(
             motif, meter, renderer, workdir / motif_id
         )
         if notes is None:
-            reason = first_error(compiler_output)
+            # The compiler said how much each bar is short or over; saying
+            # only "its bars do not fill the meter" throws that away, and a
+            # hook that was an eighth short came back an eighth short three
+            # times running. Bar checks are warnings, so `first_error` finds
+            # nothing and the paraphrase was all that was left.
+            reason = first_error(compiler_output) or _bar_check_reason(bar_checks)
             feedback.append(
                 _item(
                     motif_id,
@@ -121,7 +128,7 @@ def _meter_for(motif_id: str, plan: StructurePlan, spec: PieceSpec) -> MeterSpec
 
 def _compiled_pitches(
     motif: Motif, meter: MeterSpec, renderer: ScoreRenderer, workdir: Path
-) -> tuple[list[int] | None, str]:
+) -> tuple[list[int] | None, str, list[BarCheckWarning]]:
     """The motif's MIDI pitches and the compiler's output.
 
     A motif is checked the same way a voice fragment is — scaffolded, compiled,
@@ -133,20 +140,43 @@ def _compiled_pitches(
     try:
         result = renderer.compile(scaffolded.source, workdir)
     except LilypondCompileError as error:
-        return None, error.output
+        return None, error.output, []
     if result.midi_path is None:
-        return None, result.raw_output
+        return None, result.raw_output, []
     if result.bar_check_warnings:
         # A motif whose bars do not fill the meter it will be sung in cannot be
         # entered without either breaking its rhythm or breaking the bar. The
         # voice validator has always treated this as a failure; this one was
         # letting it through as a warning.
-        return None, result.raw_output
+        return None, result.raw_output, result.bar_check_warnings
 
     pitches = []
     for notes in extract_voice_notes(mido.MidiFile(result.midi_path)).values():
         pitches += [note.midi_pitch for note in notes]
-    return sorted(pitches), result.raw_output
+    return sorted(pitches), result.raw_output, []
+
+
+# The compiler writes "barcheck failed at: 1/8" — the leftover duration.
+_REMAINDER = re.compile(r"barcheck failed at:\s*(?P<remainder>[-\d/]+)")
+
+
+def _bar_check_reason(warnings: list[BarCheckWarning]) -> str | None:
+    """The compiler's own arithmetic on which bars fail and by how much."""
+    if not warnings:
+        return None
+    parts = []
+    for index, warning in enumerate(warnings, 1):
+        overflow = _overflow_of(warning.message)
+        parts.append(
+            f"bar {index} is off by {overflow}" if overflow else f"bar {index} does not fill"
+        )
+    return "; ".join(parts)
+
+
+def _overflow_of(message: str) -> str | None:
+    """The leftover duration a bar-check warning reports, e.g. "1/8"."""
+    match = _REMAINDER.search(message)
+    return match["remainder"] if match else None
 
 
 def _check_range_under_relations(

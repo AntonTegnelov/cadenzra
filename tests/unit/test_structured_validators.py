@@ -276,3 +276,24 @@ def test_exact_fill_holds_for_every_meter(meter: object) -> None:
     skeleton = _skeleton(*[("Dm", bar * index, bar) for index in range(3)])
 
     assert validate_harmony(skeleton, section) == []
+
+
+def test_a_motif_that_does_not_fill_its_meter_is_told_by_how_much() -> None:
+    """The compiler reports the leftover duration; saying only "its bars do not
+    fill the meter" throws that away, and a hook that was an eighth short came
+    back an eighth short three times running."""
+    from cadenzra.model.artifacts import BarCheckWarning
+    from cadenzra.verification.motifs import _bar_check_reason
+
+    reason = _bar_check_reason(
+        [BarCheckWarning(line=9, column=1, message="barcheck failed at: 1/8")]
+    )
+
+    assert reason is not None
+    assert "1/8" in reason
+
+
+def test_no_bar_checks_means_no_paraphrase_to_give() -> None:
+    from cadenzra.verification.motifs import _bar_check_reason
+
+    assert _bar_check_reason([]) is None

@@ -262,22 +262,30 @@ def _check_refrain(
     if directive.refrain_of is None or refrain_source is None:
         return []
 
-    source_by_voice = refrain_source.by_voice
     for voice in lyrics.voices:
-        original = source_by_voice.get(voice.voice_id)
-        if original is None:
-            continue
-        if not _brings_back(voice, original):
+        # Against *any* of the source's voices, not just its own line. A chorus
+        # where the harmony voice comes back doubling the lead is bringing the
+        # words back — more of them, in fact — and checking each voice against
+        # only its own part called that a failure.
+        if not any(
+            _brings_back(voice, original) for original in refrain_source.voices
+        ):
             return [
                 _item(
                     section.section_id,
                     voice.voice_id,
                     message=(
                         f"section {section.section_id} is a refrain of "
-                        f"{directive.refrain_of}, so {voice.voice_id} sings those "
-                        f'words again: "{original.text}". If this section has more '
-                        "music than that one, bring them back in full first and "
-                        "then carry on."
+                        f"{directive.refrain_of}, so {voice.voice_id} sings words "
+                        "from that section again — its own line there, or another "
+                        f'voice\'s. Its line there was: "'
+                        + (
+                            refrain_source.by_voice[voice.voice_id].text
+                            if voice.voice_id in refrain_source.by_voice
+                            else refrain_source.voices[0].text
+                        )
+                        + '". If this section has more music, bring them back in '
+                        "full first and then carry on."
                     ),
                 )
             ]
