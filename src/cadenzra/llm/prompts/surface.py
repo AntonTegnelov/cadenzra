@@ -139,7 +139,16 @@ def _entry_instruction(instruction: MaterialInstruction) -> str:
         return f"Enter it {entry.relation}."
 
     if relation.kind == "exact":
-        return "Enter it at exactly this pitch."
+        # The entry check hears intervals, not absolute octave — telling a
+        # voice whose range excludes the written pitch to enter "at exactly
+        # this pitch" gives it two contradictory orders, and it obeyed the
+        # wrong one for eight straight attempts (double-fugue's violin2,
+        # whose subject was written with a low voice's D3).
+        return (
+            "Enter it at this pitch — or shifted by a whole octave if your "
+            "range demands it; the check hears the shape and rhythm, not "
+            "the octave."
+        )
     if relation.kind == "inversion":
         return (
             "Enter it inverted: every interval keeps its size but changes "
