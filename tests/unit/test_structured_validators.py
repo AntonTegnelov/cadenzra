@@ -278,22 +278,26 @@ def test_exact_fill_holds_for_every_meter(meter: object) -> None:
     assert validate_harmony(skeleton, section) == []
 
 
-def test_a_motif_that_does_not_fill_its_meter_is_told_by_how_much() -> None:
-    """The compiler reports the leftover duration; saying only "its bars do not
-    fill the meter" throws that away, and a hook that was an eighth short came
-    back an eighth short three times running."""
+def test_a_motif_that_does_not_fill_its_meter_is_told_the_deficit() -> None:
+    """LilyPond's "failed at: X" is where the check landed *within* the bar —
+    how much the bar holds, not how much is missing. Reporting X as "off by
+    X" told a hook that was an eighth short in 4/4 it was off by 7/8, and
+    seven attempts across two model tiers chased the wrong number. The
+    rehearsal note must state the deficit."""
     from cadenzra.model.artifacts import BarCheckWarning
     from cadenzra.verification.motifs import _bar_check_reason
 
     reason = _bar_check_reason(
-        [BarCheckWarning(line=9, column=1, message="bar check failed at: 1/8")]
+        [BarCheckWarning(line=9, column=1, message="bar check failed at: 1/8")],
+        SEVEN_EIGHT,
     )
 
     assert reason is not None
-    assert "1/8" in reason
+    assert "3/4 short" in reason, "7/8 bar holding 1/8 is 3/4 short"
+    assert "1/8 over" in reason, "the overfull reading stays visible"
 
 
 def test_no_bar_checks_means_no_paraphrase_to_give() -> None:
     from cadenzra.verification.motifs import _bar_check_reason
 
-    assert _bar_check_reason([]) is None
+    assert _bar_check_reason([], SEVEN_EIGHT) is None

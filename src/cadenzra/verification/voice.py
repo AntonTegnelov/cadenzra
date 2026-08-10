@@ -21,6 +21,7 @@ from cadenzra.common.errors import LilypondCompileError
 from cadenzra.interfaces.rendering import ScoreRenderer
 from cadenzra.model.artifacts import BarCheckWarning
 from cadenzra.model.feedback import FeedbackItem
+from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.primitives.pitch import Pitch
 from cadenzra.model.primitives.time import bar_containing, offset_of
 from cadenzra.model.spec import VoiceSpec
@@ -185,7 +186,7 @@ def _check_bars_fill_the_meter(
     for warning in warnings:
         line = scaffolded.fragment_line_of(warning.line)
         bar = bar_of_fragment_position(part.lily_music, line, warning.column)
-        overflow = overflow_of(warning.message)
+        deficit = deficit_text(warning.message, section.meter)
         feedback.append(
             _item(
                 part,
@@ -193,7 +194,7 @@ def _check_bars_fill_the_meter(
                 bar=bar,
                 message=(
                     f"bar {bar} does not fill {section.meter.surface_string()}"
-                    + (f"; it is off by {overflow}" if overflow else "")
+                    + (f"; it is {deficit}" if deficit else "")
                     + " — adjust the durations or retie across the barline"
                 ),
                 evidence=warning.message,
@@ -203,9 +204,30 @@ def _check_bars_fill_the_meter(
 
 
 def overflow_of(message: str) -> str | None:
-    """The "failed at: 1/8" remainder, which says how far off the bar is."""
+    """The "failed at: 1/8" remainder — where the check landed within the bar."""
     _, marker, remainder = message.partition("failed at:")
     return remainder.strip() if marker else None
+
+
+def deficit_text(message: str, meter: MeterSpec) -> str | None:
+    """The compiler's "failed at: X" turned into the amount a repair needs.
+
+    X is the bar's *content* (mod one bar), not what is missing: a hook
+    holding 1/8 in 4/4 fails "at: 1/8", and reporting that as "off by 1/8"
+    when the bar is 7/8 short sent repairs across two model tiers hunting
+    the wrong number. The warning alone cannot distinguish a bar short by
+    (bar − X) from one over by X, so the likely reading leads and the other
+    stays visible.
+    """
+    remainder = overflow_of(message)
+    if remainder is None:
+        return None
+    try:
+        position = Fraction(remainder)
+    except (ValueError, ZeroDivisionError):
+        return None
+    missing = meter.bar_length - position
+    return f"{missing} short (or {position} over)"
 
 
 def _check_range(

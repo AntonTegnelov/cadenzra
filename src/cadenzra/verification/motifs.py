@@ -27,7 +27,7 @@ from cadenzra.notation.scaffold import scaffold_fragment
 from cadenzra.rendering.lilypond import first_error
 from cadenzra.verification.midi_analysis import extract_voice_notes
 from cadenzra.verification.transposition import UnknownRelationError, parse_relation
-from cadenzra.verification.voice import overflow_of
+from cadenzra.verification.voice import deficit_text
 
 SOURCE: Final = "validate_motifs"
 
@@ -75,7 +75,7 @@ def validate_motifs(
             # hook that was an eighth short came back an eighth short three
             # times running. Bar checks are warnings, so `first_error` finds
             # nothing and the paraphrase was all that was left.
-            reason = first_error(compiler_output) or _bar_check_reason(bar_checks)
+            reason = first_error(compiler_output) or _bar_check_reason(bar_checks, meter)
             feedback.append(
                 _item(
                     motif_id,
@@ -156,15 +156,17 @@ def _compiled_pitches(
     return sorted(pitches), result.raw_output, []
 
 
-def _bar_check_reason(warnings: list[BarCheckWarning]) -> str | None:
+def _bar_check_reason(
+    warnings: list[BarCheckWarning], meter: MeterSpec
+) -> str | None:
     """The compiler's own arithmetic on which bars fail and by how much."""
     if not warnings:
         return None
     parts = []
     for index, warning in enumerate(warnings, 1):
-        overflow = overflow_of(warning.message)
+        deficit = deficit_text(warning.message, meter)
         parts.append(
-            f"bar {index} is off by {overflow}" if overflow else f"bar {index} does not fill"
+            f"bar {index} is {deficit}" if deficit else f"bar {index} does not fill"
         )
     return "; ".join(parts)
 

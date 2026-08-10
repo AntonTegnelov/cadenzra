@@ -98,13 +98,19 @@ def test_an_overfilled_bar_is_rejected_and_names_its_bar(
     assert "7/8 (2+2+3)" in item.message
 
 
-def test_an_underfilled_bar_is_rejected(renderer: LilypondAdapter, tmp_path: Path) -> None:
+def test_an_underfilled_bar_is_rejected_and_told_the_deficit(
+    renderer: LilypondAdapter, tmp_path: Path
+) -> None:
+    """The compiler's "failed at: X" is the bar's content, not its deficit;
+    the rehearsal note must say what is missing (a 15/16 bar in 4/4 is 1/16
+    short, and "off by 15/16" sent live repairs hunting the wrong number)."""
     music = "a'8 a' b' b' c''4. |\ng'8 g' a'4 |"
 
     feedback = _check(music, renderer, tmp_path)
 
     assert len(feedback) == 1
     assert "bar 2" in feedback[0].message
+    assert "3/8 short" in feedback[0].message, "a 4/8 bar in 7/8 is 3/8 short"
 
 
 def test_a_note_above_the_ceiling_is_rejected_by_name(
