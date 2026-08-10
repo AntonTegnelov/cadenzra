@@ -104,12 +104,17 @@ ten-minute longform, full orchestra, a double fugue, a maximum-density lyric,
 metal, K-pop and their fusion — specified to find where composition quality
 breaks down, and read from the score rather than listened to.
 
-**Four completed before the API budget ran out.** Seven faults were found and
-fixed, each traced through a run log to a specific prompt, validator or parser;
-duration targeting came in within 3% on every piece and 116 compilations
-produced zero bar-check warnings. No claim is made about long-form coherence,
-orchestral balance, double-fugue counterpoint or style fusion — those probes
-were specified and not answered.
+**Six completed; three did not, and their failures are the most informative
+results.** Thirteen faults were found and fixed, each traced through a run log
+to a specific prompt, validator or parser; duration targeting came in within 7%
+on every piece and 194 compilations produced zero bar-check warnings.
+
+Two findings stand out. A double fugue's repair loop went 239 parallel-octave
+violations, then 48, then 48 — an exact plateau, because every voice was
+rewritten against a stale snapshot and never shown the line it clashed with.
+That is the lyrics coordination bug again, in the counterpoint domain. And the
+blind device reader, told nothing about what had been requested, independently
+reported the same missing `ekphrasis` a human reading finds.
 
 Full write-up, including the pieces' weaknesses: [quality-review.md](quality-review.md).
 
