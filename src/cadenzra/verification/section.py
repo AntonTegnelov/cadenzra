@@ -150,14 +150,14 @@ def _check_parallels(
     names = sorted(voices)
     for upper_index, upper in enumerate(names):
         for lower in names[upper_index + 1 :]:
-            for interval, onsets in _parallel_runs(voices[upper], voices[lower]):
+            for interval, onsets in parallel_runs(voices[upper], voices[lower]):
                 feedback += _routed_pair_items(
                     upper, lower, interval, onsets, section, spans
                 )
     return feedback
 
 
-def _parallel_runs(
+def parallel_runs(
     upper: list[NoteEvent], lower: list[NoteEvent]
 ) -> list[tuple[str, list[Fraction]]]:
     """Maximal passages of parallel motion, as (interval, onsets) runs.

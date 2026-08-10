@@ -10,6 +10,7 @@ answer under its floor; catching that here costs one check, catching it after
 the sections are written costs regenerating them (docs/05).
 """
 
+from itertools import combinations
 from pathlib import Path
 from typing import Final
 
@@ -21,11 +22,14 @@ from cadenzra.model.artifacts import BarCheckWarning
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.motif import Motif, MotifLibrary
 from cadenzra.model.primitives.meter import MeterSpec
+from cadenzra.model.primitives.time import bar_containing, offset_of
 from cadenzra.model.spec import PieceSpec
-from cadenzra.model.structure import StructurePlan
+from cadenzra.model.structure import MaterialEntry, StructurePlan
 from cadenzra.notation.scaffold import scaffold_fragment
 from cadenzra.rendering.lilypond import first_error
-from cadenzra.verification.midi_analysis import extract_voice_notes
+from cadenzra.verification.harmony import predicted_entry
+from cadenzra.verification.midi_analysis import NoteEvent, extract_voice_notes
+from cadenzra.verification.section import parallel_runs
 from cadenzra.verification.transposition import UnknownRelationError, parse_relation
 from cadenzra.verification.voice import deficit_text
 
@@ -48,9 +52,12 @@ def validate_motifs(
     spec: PieceSpec,
     renderer: ScoreRenderer,
     workdir: Path,
+    *,
+    parallel_policy: str = "forbid",
 ) -> list[FeedbackItem]:
     """Check every motif. An empty list means the library is accepted."""
     feedback = []
+    events_by_motif: dict[str, list[NoteEvent]] = {}
 
     for brief in plan.materials_needed:
         if brief.motif_id not in motifs:
@@ -66,9 +73,11 @@ def validate_motifs(
 
     for motif_id, motif in sorted(motifs.motifs.items()):
         meter = _meter_for(motif_id, plan, spec)
-        notes, compiler_output, bar_checks = _compiled_pitches(
+        notes, events, compiler_output, bar_checks = _compiled_pitches(
             motif, meter, renderer, workdir / motif_id
         )
+        if events:
+            events_by_motif[motif_id] = events
         if notes is None:
             # The compiler said how much each bar is short or over; saying
             # only "its bars do not fill the meter" throws that away, and a
@@ -115,6 +124,70 @@ def validate_motifs(
             continue
         feedback += _check_range_under_relations(motif, notes, plan, spec)
 
+    feedback += _check_entry_collisions(events_by_motif, plan, parallel_policy)
+    return feedback
+
+
+def _check_entry_collisions(
+    events: dict[str, list[NoteEvent]],
+    plan: StructurePlan,
+    policy: str,
+) -> list[FeedbackItem]:
+    """Overlapping prescribed entries, checked against each other now.
+
+    Two subjects entered together as the plan declares can move in parallel
+    octaves — a contradiction with no fixable side once the piece is built,
+    because both lines are prescribed note-for-note. Exact, transposed and
+    inverted entries are fully determined the moment the motifs exist, so
+    the collision costs nothing beyond the compiles already made. Tonal
+    answers stay unpredicted, as everywhere else.
+    """
+    if policy != "forbid":
+        return []
+    feedback = []
+    for section in plan.sections:
+        placed: list[tuple[MaterialEntry, list[NoteEvent]]] = []
+        for entry in section.material:
+            notes = events.get(entry.motif_id)
+            if not notes:
+                continue
+            try:
+                relation = parse_relation(entry.relation)
+            except UnknownRelationError:
+                # The structure validator owns this failure.
+                continue
+            predicted = predicted_entry(notes, relation.kind, relation.semitones)
+            if predicted is None:
+                continue
+            shift = offset_of(entry.bar, 1, section.meter)
+            placed.append(
+                (
+                    entry,
+                    [
+                        note.model_copy(update={"onset": note.onset + shift})
+                        for note in predicted
+                    ],
+                )
+            )
+        for (first, first_notes), (second, second_notes) in combinations(placed, 2):
+            if first.voice_id == second.voice_id:
+                continue
+            for interval, onsets in parallel_runs(first_notes, second_notes):
+                feedback.append(
+                    _item(
+                        first.motif_id,
+                        section_id=section.section_id,
+                        message=(
+                            f"entered as declared in section {section.section_id}, "
+                            f"{first.motif_id!r} ({first.voice_id}) and "
+                            f"{second.motif_id!r} ({second.voice_id}) move in "
+                            f"parallel {interval} from bar "
+                            f"{bar_containing(onsets[0], section.meter)} — both "
+                            "lines are prescribed note-for-note, so no voice can "
+                            "fix this later; reshape one of the two"
+                        ),
+                    )
+                )
     return feedback
 
 
@@ -126,7 +199,7 @@ def _meter_for(motif_id: str, plan: StructurePlan, spec: PieceSpec) -> MeterSpec
 
 def _compiled_pitches(
     motif: Motif, meter: MeterSpec, renderer: ScoreRenderer, workdir: Path
-) -> tuple[list[int] | None, str, list[BarCheckWarning]]:
+) -> tuple[list[int] | None, list[NoteEvent], str, list[BarCheckWarning]]:
     """The motif's MIDI pitches and the compiler's output.
 
     A motif is checked the same way a voice fragment is — scaffolded, compiled,
@@ -138,20 +211,23 @@ def _compiled_pitches(
     try:
         result = renderer.compile(scaffolded.source, workdir)
     except LilypondCompileError as error:
-        return None, error.output, []
+        return None, [], error.output, []
     if result.midi_path is None:
-        return None, result.raw_output, []
+        return None, [], result.raw_output, []
     if result.bar_check_warnings:
         # A motif whose bars do not fill the meter it will be sung in cannot be
         # entered without either breaking its rhythm or breaking the bar. The
         # voice validator has always treated this as a failure; this one was
         # letting it through as a warning.
-        return None, result.raw_output, result.bar_check_warnings
+        return None, [], result.raw_output, result.bar_check_warnings
 
     pitches = []
+    events: list[NoteEvent] = []
     for notes in extract_voice_notes(mido.MidiFile(result.midi_path)).values():
         pitches += [note.midi_pitch for note in notes]
-    return sorted(pitches), result.raw_output, []
+        events += notes
+    events.sort(key=lambda note: note.onset)
+    return sorted(pitches), events, result.raw_output, []
 
 
 def _bar_check_reason(

@@ -176,7 +176,12 @@ def generate_motifs(state: PipelineState, services: LayerServices) -> PipelineSt
 
     def validate(library: MotifLibrary) -> list[FeedbackItem]:
         return validate_motifs(
-            library, plan, state.spec, services.renderer, services.workdir / "motifs"
+            library,
+            plan,
+            state.spec,
+            services.renderer,
+            services.workdir / "motifs",
+            parallel_policy=style.parallel_fifths_policy,
         )
 
     motifs = _converge(

@@ -175,7 +175,7 @@ def check_entries_against_grid(
             relation = parse_relation(entry.relation)
         except UnknownRelationError:
             continue  # the structure validator owns unknown relations
-        predicted = _predicted_entry(subject, relation.kind, relation.semitones)
+        predicted = predicted_entry(subject, relation.kind, relation.semitones)
         if predicted is None:
             continue
         start = offset_of(entry.bar, 1, section.meter)
@@ -215,7 +215,7 @@ def check_entries_against_grid(
     return feedback
 
 
-def _predicted_entry(
+def predicted_entry(
     subject: list[NoteEvent], kind: str, semitones: int
 ) -> list[NoteEvent] | None:
     """The entry's sounding notes, or None where prediction would guess."""
