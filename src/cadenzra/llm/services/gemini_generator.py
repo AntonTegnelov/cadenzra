@@ -109,13 +109,27 @@ def _purpose_of(
 
 
 class GeminiGenerator:
-    """Implements `GeneratorLLM` against a Gemini model."""
+    """Implements `GeneratorLLM` against a Gemini model.
 
-    def __init__(self, client: GeminiClient) -> None:
+    `clients_by_tool` lets individual capabilities ride a different model — a
+    cheaper one for classification-shaped work, a stronger one where the
+    correction rate justifies it. Unmapped tools use the default client.
+    """
+
+    def __init__(
+        self,
+        client: GeminiClient,
+        *,
+        clients_by_tool: dict[str, GeminiClient] | None = None,
+    ) -> None:
         self._client = client
+        self._clients_by_tool = clients_by_tool or {}
+
+    def _client_for(self, tool: str) -> GeminiClient:
+        return self._clients_by_tool.get(tool, self._client)
 
     def derive_style_pack(self, spec: PieceSpec) -> StylePack:
-        payload = self._client.call_tool(
+        payload = self._client_for(DERIVE_STYLE_TOOL).call_tool(
             system_prompt=STYLE_SYSTEM,
             user_prompt=build_style_prompt(spec),
             tool=describe_style_schema(
@@ -131,7 +145,7 @@ class GeminiGenerator:
         style: StylePack,
         feedback: list[FeedbackItem] | None = None,
     ) -> StructurePlan:
-        payload = self._client.call_tool(
+        payload = self._client_for(PLAN_STRUCTURE_TOOL).call_tool(
             system_prompt=PLAN_SYSTEM,
             user_prompt=build_plan_prompt(spec, style, feedback),
             tool=plan_structure_schema(
@@ -150,7 +164,7 @@ class GeminiGenerator:
         plan: StructurePlan,
         feedback: list[FeedbackItem] | None = None,
     ) -> LyricPlan:
-        payload = self._client.call_tool(
+        payload = self._client_for(PLAN_LYRICS_TOOL).call_tool(
             system_prompt=LYRIC_PLAN_SYSTEM,
             user_prompt=build_lyric_plan_prompt(spec, style, plan, feedback),
             tool=plan_lyrics_schema(
@@ -162,7 +176,7 @@ class GeminiGenerator:
         return parse_lyric_plan(payload, plan, language=spec.lyric_language)
 
     def generate_motifs(self, ctx: MotifContext) -> MotifLibrary:
-        payload = self._client.call_tool(
+        payload = self._client_for(WRITE_MOTIFS_TOOL).call_tool(
             system_prompt=MOTIF_SYSTEM,
             user_prompt=build_motif_prompt(
                 ctx.briefs, ctx.spec, ctx.style, ctx.plan, ctx.feedback
@@ -173,7 +187,7 @@ class GeminiGenerator:
         return parse_motif_library(payload)
 
     def generate_harmony(self, ctx: HarmonyContext) -> HarmonicSkeleton:
-        payload = self._client.call_tool(
+        payload = self._client_for(WRITE_HARMONY_TOOL).call_tool(
             system_prompt=HARMONY_SYSTEM,
             user_prompt=build_harmony_prompt(
                 ctx.section,
@@ -193,7 +207,7 @@ class GeminiGenerator:
         return parse_harmonic_skeleton(payload, ctx.section)
 
     def generate_voice(self, ctx: VoiceContext) -> VoicePart:
-        payload = self._client.call_tool(
+        payload = self._client_for(WRITE_PART_TOOL).call_tool(
             system_prompt=VOICE_SYSTEM,
             user_prompt=build_voice_prompt(ctx),
             tool=write_part_schema(
@@ -213,7 +227,7 @@ class GeminiGenerator:
         )
 
     def generate_lyrics(self, ctx: LyricsContext) -> SectionLyrics:
-        payload = self._client.call_tool(
+        payload = self._client_for(WRITE_LYRICS_TOOL).call_tool(
             system_prompt=LYRICS_SYSTEM,
             user_prompt=build_lyrics_prompt(ctx),
             tool=write_lyrics_schema(ctx.voice_ids),
@@ -229,7 +243,7 @@ class GeminiGenerator:
 
     def observe_lyric_devices(self, lyrics_text: str) -> list[DeviceObservation]:
         """Read the lyrics blind and report what is in them (docs/10)."""
-        payload = self._client.call_tool(
+        payload = self._client_for(OBSERVE_DEVICES_TOOL).call_tool(
             system_prompt=DEVICE_OBSERVATION_SYSTEM,
             user_prompt=build_device_observation_prompt(lyrics_text),
             tool=observe_devices_schema(),
@@ -238,7 +252,7 @@ class GeminiGenerator:
         return parse_device_observations(payload)
 
     def review(self, request: ReviewRequest) -> ReviewVerdict:
-        payload = self._client.call_tool(
+        payload = self._client_for(REVIEW_TOOL).call_tool(
             system_prompt=REVIEW_SYSTEM,
             user_prompt="\n\n".join(
                 block

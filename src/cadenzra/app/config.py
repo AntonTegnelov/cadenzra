@@ -92,6 +92,12 @@ class RunConfig(BaseSettings):
     # are computed only for models actually priced here.
     prices: dict[str, ModelPrice] = Field(default_factory=dict)
 
+    # Per-capability model overrides, keyed by tool name (write_part,
+    # describe_style, ...). Empty by default: tiering is a knob, not a
+    # behavior change — every capability rides `generation_model` until a
+    # measurement says otherwise.
+    capability_models: dict[str, str] = Field(default_factory=dict)
+
     # Bounded retries for transport and malformed output — LLM calls are
     # non-deterministic and warrant them, unlike deterministic subprocesses.
     llm_attempts: int = 3

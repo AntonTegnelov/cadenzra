@@ -8,9 +8,11 @@ Tests hand the graph fakes through this same door; nothing is ever patched
 from pathlib import Path
 
 from cadenzra.app.config import RunConfig
+from cadenzra.common.errors import CadenzraError
 from cadenzra.common.runlog import RunLog, run_stamp
 from cadenzra.graph.nodes import Services
 from cadenzra.llm.clients.gemini import GeminiClient
+from cadenzra.llm.schemas.registry import REPLAYABLE_TOOLS
 from cadenzra.llm.services.gemini_critic import GeminiCritic
 from cadenzra.llm.services.gemini_generator import GeminiGenerator
 from cadenzra.rendering.fluidsynth import FluidsynthAdapter
@@ -18,15 +20,43 @@ from cadenzra.rendering.lilypond import LilypondAdapter
 
 
 def build_generator(config: RunConfig, runlog: RunLog | None = None) -> GeminiGenerator:
-    """The `GeneratorLLM` for this run."""
-    return GeminiGenerator(
-        GeminiClient(
-            api_key=config.require_gemini_key(),
-            model=config.generation_model,
-            attempts=config.llm_attempts,
-            runlog=runlog,
-            include_thoughts=config.log_thoughts and runlog is not None,
+    """The `GeneratorLLM` for this run.
+
+    `capability_models` maps tool names onto other models; one client is
+    built per *distinct* model so two capabilities on the same cheap tier
+    share a connection. A key that names no known tool is a config typo and
+    fails loudly — silently riding the default is how a tiering experiment
+    reports the wrong numbers.
+    """
+    unknown = set(config.capability_models) - REPLAYABLE_TOOLS
+    if unknown:
+        raise CadenzraError(
+            f"capability_models names unknown tools: {', '.join(sorted(unknown))}; "
+            f"known tools are {', '.join(sorted(REPLAYABLE_TOOLS))}"
         )
+    default = _client(config, config.generation_model, runlog)
+    by_model = {
+        model: _client(config, model, runlog)
+        for model in sorted(set(config.capability_models.values()))
+        if model != config.generation_model
+    }
+    by_model[config.generation_model] = default
+    return GeminiGenerator(
+        default,
+        clients_by_tool={
+            tool: by_model[model]
+            for tool, model in config.capability_models.items()
+        },
+    )
+
+
+def _client(config: RunConfig, model: str, runlog: RunLog | None) -> GeminiClient:
+    return GeminiClient(
+        api_key=config.require_gemini_key(),
+        model=model,
+        attempts=config.llm_attempts,
+        runlog=runlog,
+        include_thoughts=config.log_thoughts and runlog is not None,
     )
 
 
@@ -51,18 +81,11 @@ def build_client_for_tool(
 ) -> GeminiClient:
     """The client one capability's calls go through.
 
-    Today every tool rides the generation model; this is the seam where the
-    per-capability model knobs attach, and what replay uses so a replayed turn
-    is wired exactly like a live one.
+    Consults the same `capability_models` mapping as `build_generator`, which
+    is what makes a replayed turn wired exactly like a live one.
     """
-    del tool  # every capability rides the generation model, for now
-    return GeminiClient(
-        api_key=config.require_gemini_key(),
-        model=config.generation_model,
-        attempts=config.llm_attempts,
-        runlog=runlog,
-        include_thoughts=config.log_thoughts and runlog is not None,
-    )
+    model = config.capability_models.get(tool, config.generation_model)
+    return _client(config, model, runlog)
 
 
 def build_renderer(config: RunConfig, runlog: RunLog | None = None) -> LilypondAdapter:
