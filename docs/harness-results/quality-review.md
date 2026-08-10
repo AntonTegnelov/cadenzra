@@ -340,16 +340,17 @@ models had been papering over, each fixed test-first the same evening:
     joint entry are rejected at motif time, before anything is built, using
     the same parallel-run math as the section checker.
 
-**Where the pieces stand.** All five advanced from their spend-cap corpses to
-within one voice of completion, and the walls that remain are model-capability
-walls with varied (not repeating) failure signatures: metal-kpop (33 parts and
-all seven lyric sections written, blinded craft review firing live) sticks on
-vocal1's 7/8 breakdown bars; kpop (25 parts) on one Outro figuration voice;
-orchestra (37 parts across five sections) on low-register discipline a
-semitone below spec floors; longform cleared its inherited grid contradiction
-through the regrid loop-back and is mid-Movement-III; double-fugue converged
-compatible subjects under the new collision check and a grid that honors them,
-and now walks the voice layer. `budget_exhausted` on the lite tier is an
+**Where the pieces stand.** **metal-kpop and kpop completed end to end on the
+lite tier** — audio, score, lyrics, blinded craft review and all; metal-kpop
+is the hardest hybrid probe here (7/8 djent under 4/4 vocal hooks entered
+across the barline with ties). The other three advanced from their spend-cap
+corpses to within one voice: orchestra (37 parts across five sections) sticks
+on low-register discipline a semitone below spec floors; longform cleared its
+inherited grid contradiction through the regrid loop-back and sticks on a 5/4
+ostinato bar; double-fugue converged compatible subjects under the new
+collision check and a grid that honors them, and sticks on violin2 — whose
+identically-repeating range signature survived the octave-shift fix and is
+therefore the next constant-signature suspect, not a model wall. `budget_exhausted` on the lite tier is an
 accepted dev outcome — the pipeline's job is to be *honest* about it, and it
 now is: every failure names its layer, its bar, and its true deficit.
 
