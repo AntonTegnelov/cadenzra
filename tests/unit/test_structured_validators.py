@@ -286,7 +286,7 @@ def test_a_motif_that_does_not_fill_its_meter_is_told_by_how_much() -> None:
     from cadenzra.verification.motifs import _bar_check_reason
 
     reason = _bar_check_reason(
-        [BarCheckWarning(line=9, column=1, message="barcheck failed at: 1/8")]
+        [BarCheckWarning(line=9, column=1, message="bar check failed at: 1/8")]
     )
 
     assert reason is not None

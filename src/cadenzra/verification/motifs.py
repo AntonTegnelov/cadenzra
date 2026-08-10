@@ -10,7 +10,6 @@ answer under its floor; catching that here costs one check, catching it after
 the sections are written costs regenerating them (docs/05).
 """
 
-import re
 from pathlib import Path
 from typing import Final
 
@@ -28,6 +27,7 @@ from cadenzra.notation.scaffold import scaffold_fragment
 from cadenzra.rendering.lilypond import first_error
 from cadenzra.verification.midi_analysis import extract_voice_notes
 from cadenzra.verification.transposition import UnknownRelationError, parse_relation
+from cadenzra.verification.voice import overflow_of
 
 SOURCE: Final = "validate_motifs"
 
@@ -156,27 +156,17 @@ def _compiled_pitches(
     return sorted(pitches), result.raw_output, []
 
 
-# The compiler writes "barcheck failed at: 1/8" — the leftover duration.
-_REMAINDER = re.compile(r"barcheck failed at:\s*(?P<remainder>[-\d/]+)")
-
-
 def _bar_check_reason(warnings: list[BarCheckWarning]) -> str | None:
     """The compiler's own arithmetic on which bars fail and by how much."""
     if not warnings:
         return None
     parts = []
     for index, warning in enumerate(warnings, 1):
-        overflow = _overflow_of(warning.message)
+        overflow = overflow_of(warning.message)
         parts.append(
             f"bar {index} is off by {overflow}" if overflow else f"bar {index} does not fill"
         )
     return "; ".join(parts)
-
-
-def _overflow_of(message: str) -> str | None:
-    """The leftover duration a bar-check warning reports, e.g. "1/8"."""
-    match = _REMAINDER.search(message)
-    return match["remainder"] if match else None
 
 
 def _check_range_under_relations(

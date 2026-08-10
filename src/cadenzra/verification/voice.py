@@ -184,7 +184,7 @@ def _check_bars_fill_the_meter(
     for warning in warnings:
         line = scaffolded.fragment_line_of(warning.line)
         bar = bar_of_fragment_position(part.lily_music, line, warning.column)
-        overflow = _overflow_of(warning.message)
+        overflow = overflow_of(warning.message)
         feedback.append(
             _item(
                 part,
@@ -201,7 +201,7 @@ def _check_bars_fill_the_meter(
     return feedback
 
 
-def _overflow_of(message: str) -> str | None:
+def overflow_of(message: str) -> str | None:
     """The "failed at: 1/8" remainder, which says how far off the bar is."""
     _, marker, remainder = message.partition("failed at:")
     return remainder.strip() if marker else None
