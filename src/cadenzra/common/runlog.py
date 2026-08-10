@@ -94,6 +94,12 @@ class TurnInfo:
     label: str
     section_id: str | None = None
     voice_id: str | None = None
+    # Why this turn happened: "first" | "retry" (malformed output) |
+    # "repair" (a validator sent it back) | "replay". `repairs` carries the
+    # fingerprints of the feedback items a repair is addressing, which is what
+    # lets the log answer "what did fixing that violation cost".
+    purpose: str = "first"
+    repairs: tuple[str, ...] = ()
 
     def where(self) -> str:
         parts = [p for p in (self.section_id, self.voice_id) if p]
@@ -144,6 +150,10 @@ class RunLog:
         seconds: float = 0.0,
         error: str | None = None,
         audio: str | None = None,
+        usage: dict[str, Any] | None = None,
+        finish_reason: str | None = None,
+        model_version: str | None = None,
+        request_id: str | None = None,
     ) -> None:
         """Record one call to a model — successful or not, verbatim."""
         with self._lock:
@@ -161,6 +171,8 @@ class RunLog:
                 "label": label,
                 "section": turn.section_id if turn else None,
                 "voice": turn.voice_id if turn else None,
+                "purpose": turn.purpose if turn else "first",
+                "repairs": list(turn.repairs) if turn else [],
                 "attempt": attempt,
                 "attempts": attempts,
                 "model": model,
@@ -173,6 +185,10 @@ class RunLog:
                 "response": response,
                 "error": error,
                 "seconds": round(seconds, 3),
+                "usage": usage,
+                "finish_reason": finish_reason,
+                "model_version": model_version,
+                "request_id": request_id,
             },
         )
 
@@ -211,6 +227,21 @@ class RunLog:
             },
         )
 
+    def wait(self, *, seconds: float, reason: str) -> None:
+        """Record time spent waiting on the outside world (a rate limit).
+
+        Its own event so a run stalling on quota is legible as stalling — folded
+        into a turn's `seconds` it reads as slow inference, which is exactly how
+        the cost audit misread it.
+        """
+        self._append_json(
+            self.flow_path,
+            {"at": _now(), "kind": "wait", "seconds": round(seconds, 3), "reason": reason},
+        )
+        self._append_text(
+            self.narrative_path, f"*Waiting {seconds:.0f}s — {reason}*\n"
+        )
+
     def validation(
         self,
         *,
@@ -219,12 +250,16 @@ class RunLog:
         attempt: int,
         budget: int,
         messages: list[str],
+        items: list[dict[str, Any]] | None = None,
     ) -> None:
         """Record a rejection and what it said.
 
         State keeps only current feedback — superseded items are dropped when
         their target regenerates (docs/05). This is where the history they left
-        behind lives.
+        behind lives. `items` is the structured mirror of `messages` — plain
+        dicts (id, kind, section, voices, voice, bar, message, routing), since
+        this module imports nothing from cadenzra — so convergence can be
+        computed instead of inferred from prose.
         """
         self._append_json(
             self.flow_path,
@@ -236,6 +271,7 @@ class RunLog:
                 "attempt": attempt,
                 "budget": budget,
                 "messages": messages,
+                "items": items,
             },
         )
         bullets = "\n".join(f"- {message}" for message in messages)

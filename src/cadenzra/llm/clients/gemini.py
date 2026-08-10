@@ -12,6 +12,7 @@ retried a fixed number of times and then raises.
 
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
@@ -116,6 +117,8 @@ class GeminiClient:
         for attempt in range(1, self._attempts + 1):
             started = time.monotonic()
             thoughts: str | None = None
+            facts = _ResponseFacts()
+            delay = 0.0
             try:
                 contents: list[types.Part] = [
                     types.Part.from_text(text=user_prompt),
@@ -124,6 +127,7 @@ class GeminiClient:
                 response = self._client.models.generate_content(
                     model=self._model, contents=contents, config=config
                 )
+                facts = _facts_of(response)
                 arguments, thoughts = _extract(response, tool["name"])
             except LLMOutputError as error:
                 last_error = error
@@ -149,8 +153,6 @@ class GeminiClient:
                 # halfway through on a quota that would have cleared.
                 if attempt < self._attempts and _is_rate_limited(error):
                     delay = self._backoff_s * (2 ** (attempt - 1))
-                    _log.warning("rate limited; waiting %.0fs", delay)
-                    time.sleep(delay)
             else:
                 self._record(
                     turn=turn,
@@ -162,11 +164,14 @@ class GeminiClient:
                     thoughts=thoughts,
                     seconds=time.monotonic() - started,
                     audio=audio,
+                    facts=facts,
                 )
                 return arguments
 
             # A rejected attempt is the most informative turn in the log: it
-            # shows what the model was told at the moment it went wrong.
+            # shows what the model was told at the moment it went wrong. It is
+            # recorded before any backoff so `seconds` measures the call, and
+            # the wait is its own event rather than invisible sleep.
             self._record(
                 turn=turn,
                 tool=tool,
@@ -178,7 +183,13 @@ class GeminiClient:
                 seconds=time.monotonic() - started,
                 error=str(last_error),
                 audio=audio,
+                facts=facts,
             )
+            if delay:
+                _log.warning("rate limited; waiting %.0fs", delay)
+                if self._runlog is not None:
+                    self._runlog.wait(seconds=delay, reason=str(last_error)[:200])
+                time.sleep(delay)
 
         raise LLMOutputError(
             f"{self._model} did not return a usable {tool['name']} call in "
@@ -198,9 +209,11 @@ class GeminiClient:
         seconds: float,
         error: str | None = None,
         audio: str | None = None,
+        facts: _ResponseFacts | None = None,
     ) -> None:
         if self._runlog is None:
             return
+        facts = facts or _ResponseFacts()
         self._runlog.llm_turn(
             turn=turn,
             model=self._model,
@@ -215,6 +228,10 @@ class GeminiClient:
             seconds=seconds,
             error=error,
             audio=audio,
+            usage=facts.usage,
+            finish_reason=facts.finish_reason,
+            model_version=facts.model_version,
+            request_id=facts.request_id,
         )
 
 
@@ -247,6 +264,50 @@ def _is_rate_limited(error: Exception) -> bool:
 
 def _mime_type_of(audio: Path) -> str:
     return _MIME_TYPES.get(audio.suffix.lower(), "audio/wav")
+
+
+@dataclass(frozen=True)
+class _ResponseFacts:
+    """What the API reports about a response beyond its content.
+
+    Token counts are the accounting the cost audit had to reconstruct from
+    character counts; finish_reason distinguishes a truncated answer from a bad
+    one; model_version catches silent upgrades; request_id is for support.
+    """
+
+    usage: dict[str, Any] | None = None
+    finish_reason: str | None = None
+    model_version: str | None = None
+    request_id: str | None = None
+
+
+def _facts_of(response: types.GenerateContentResponse) -> _ResponseFacts:
+    """Read usage and provenance off a response. Pure, absent-tolerant.
+
+    The API is a boundary: any of these may be missing on a given response,
+    and their absence is recorded as absence, never invented.
+    """
+    meta = response.usage_metadata
+    usage: dict[str, Any] | None = None
+    if meta is not None:
+        usage = {
+            "input_tokens": meta.prompt_token_count,
+            "answer_tokens": meta.candidates_token_count,
+            "thinking_tokens": meta.thoughts_token_count,
+            "cached_tokens": meta.cached_content_token_count,
+            "total_tokens": meta.total_token_count,
+        }
+    finish = None
+    for candidate in response.candidates or []:
+        if candidate.finish_reason is not None:
+            finish = str(candidate.finish_reason)
+            break
+    return _ResponseFacts(
+        usage=usage,
+        finish_reason=finish,
+        model_version=response.model_version,
+        request_id=response.response_id,
+    )
 
 
 def _extract(

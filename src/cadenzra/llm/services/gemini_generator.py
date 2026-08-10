@@ -5,6 +5,8 @@ tool call, parse the result inward. Adding a capability means four artifacts,
 always all four — prompt builder, schema, parser, protocol method (docs/06).
 """
 
+from typing import Any
+
 from cadenzra.common.runlog import TurnInfo
 from cadenzra.llm.clients.gemini import GeminiClient
 from cadenzra.llm.parsers.lyrics import (
@@ -84,6 +86,28 @@ from cadenzra.model.style import StylePack
 from cadenzra.model.voice import VoicePart
 
 
+def _purpose_of(
+    feedback: list[FeedbackItem] | None, rejected: object | None = None
+) -> dict[str, Any]:
+    """Why this turn is happening, as `TurnInfo` kwargs for the run log.
+
+    "first" — nothing came back yet; "retry" — the previous answer would not
+    parse (source "parser"); "repair" — a validator rejected real music, and
+    the fingerprints say which violations this turn is paying to fix.
+    """
+    items = feedback or []
+    if not items and rejected is None:
+        return {"purpose": "first"}
+    if items and all(item.source == "parser" for item in items):
+        return {"purpose": "retry"}
+    return {
+        "purpose": "repair",
+        "repairs": tuple(
+            item.fingerprint() for item in items if item.source != "parser"
+        ),
+    }
+
+
 class GeminiGenerator:
     """Implements `GeneratorLLM` against a Gemini model."""
 
@@ -115,7 +139,7 @@ class GeminiGenerator:
                 [voice.voice_id for voice in spec.voices],
                 sorted(spec.groups),
             ),
-            turn=TurnInfo(label=PLAN_STRUCTURE_TOOL),
+            turn=TurnInfo(label=PLAN_STRUCTURE_TOOL, **_purpose_of(feedback)),
         )
         return parse_structure_plan(payload, spec)
 
@@ -133,7 +157,7 @@ class GeminiGenerator:
                 [section.section_id for section in plan.sections],
                 sorted(RELATIONSHIP_DEFINITIONS),
             ),
-            turn=TurnInfo(label=PLAN_LYRICS_TOOL),
+            turn=TurnInfo(label=PLAN_LYRICS_TOOL, **_purpose_of(feedback)),
         )
         return parse_lyric_plan(payload, plan, language=spec.lyric_language)
 
@@ -144,7 +168,7 @@ class GeminiGenerator:
                 ctx.briefs, ctx.spec, ctx.style, ctx.plan, ctx.feedback
             ),
             tool=write_motifs_schema(),
-            turn=TurnInfo(label=WRITE_MOTIFS_TOOL),
+            turn=TurnInfo(label=WRITE_MOTIFS_TOOL, **_purpose_of(ctx.feedback)),
         )
         return parse_motif_library(payload)
 
@@ -160,7 +184,11 @@ class GeminiGenerator:
                 ctx.feedback,
             ),
             tool=write_harmony_schema(ctx.section.bars),
-            turn=TurnInfo(label=WRITE_HARMONY_TOOL, section_id=ctx.section.section_id),
+            turn=TurnInfo(
+                label=WRITE_HARMONY_TOOL,
+                section_id=ctx.section.section_id,
+                **_purpose_of(ctx.feedback),
+            ),
         )
         return parse_harmonic_skeleton(payload, ctx.section)
 
@@ -175,6 +203,7 @@ class GeminiGenerator:
                 label=WRITE_PART_TOOL,
                 section_id=ctx.section.section_id,
                 voice_id=ctx.voice.voice_id,
+                **_purpose_of(ctx.feedback, ctx.rejected),
             ),
         )
         return parse_voice_part(
@@ -189,7 +218,9 @@ class GeminiGenerator:
             user_prompt=build_lyrics_prompt(ctx),
             tool=write_lyrics_schema(ctx.voice_ids),
             turn=TurnInfo(
-                label=WRITE_LYRICS_TOOL, section_id=ctx.section.section_id
+                label=WRITE_LYRICS_TOOL,
+                section_id=ctx.section.section_id,
+                **_purpose_of(ctx.feedback, ctx.rejected),
             ),
         )
         return parse_section_lyrics(

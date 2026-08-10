@@ -14,10 +14,10 @@ functions over state either way.
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from cadenzra.app.config import RetryBudgets
 from cadenzra.common.errors import BudgetExhaustedError, LLMOutputError
@@ -30,6 +30,8 @@ from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.lyrics import LyricPlan
 from cadenzra.model.motif import Motif, MotifLibrary
 from cadenzra.model.primitives.ids import SectionId
+from cadenzra.model.primitives.meter import MeterSpec
+from cadenzra.model.primitives.time import bar_containing
 from cadenzra.model.state import PipelineState, attempt_key
 from cadenzra.model.structure import SectionPlan, StructurePlan
 from cadenzra.model.style import StylePack
@@ -246,6 +248,39 @@ def _motifs_in(state: PipelineState, section: SectionPlan) -> list[Motif]:
     ]
 
 
+def feedback_dicts(
+    feedback: list[FeedbackItem],
+    meters: Mapping[SectionId, MeterSpec] | None = None,
+) -> list[dict[str, Any]]:
+    """Feedback as the plain dicts the run log records beside the messages.
+
+    The run log imports nothing from cadenzra, so the conversion happens here.
+    `bar` needs the section's meter; callers without one (the structured
+    layers) simply record it as absent.
+    """
+    dicts: list[dict[str, Any]] = []
+    for item in feedback:
+        meter = (meters or {}).get(item.section_id) if item.section_id else None
+        bar = (
+            bar_containing(item.location, meter)
+            if item.location is not None and meter is not None
+            else None
+        )
+        dicts.append(
+            {
+                "id": item.fingerprint(),
+                "kind": item.kind or item.source,
+                "section": item.section_id,
+                "voices": list(item.voices),
+                "voice": item.voice_id,
+                "bar": bar,
+                "message": item.message,
+                "routing": item.routing,
+            }
+        )
+    return dicts
+
+
 def _converge[T](
     generate: Callable[[list[FeedbackItem]], T],
     validate: Callable[[T], list[FeedbackItem]],
@@ -287,6 +322,7 @@ def _converge[T](
                     attempt=attempt,
                     budget=budget,
                     messages=[str(error)],
+                    items=feedback_dicts(feedback),
                 )
             continue
 
@@ -307,6 +343,7 @@ def _converge[T](
                 attempt=attempt,
                 budget=budget,
                 messages=[item.message for item in feedback],
+                items=feedback_dicts(feedback),
             )
 
     raise BudgetExhaustedError(

@@ -49,6 +49,116 @@ def test_a_turn_is_recorded_verbatim(tmp_path: Path) -> None:
     assert USER in narrative
 
 
+def test_usage_and_provenance_land_in_the_turn_record(tmp_path: Path) -> None:
+    """Token counts are the audit's currency; a turn without them is a guess.
+
+    The cost analysis had to reconstruct every number in it from character
+    counts because the client discarded `usage_metadata` — this pins the fields
+    that make the next audit a measurement.
+    """
+    log = RunLog(tmp_path / "logs")
+    log.llm_turn(
+        turn=TurnInfo(
+            label="write_part",
+            section_id="B",
+            voice_id="alto",
+            purpose="repair",
+            repairs=("a1b2c3d4",),
+        ),
+        model="gemini-3.6-flash",
+        temperature=None,
+        attempt=1,
+        attempts=3,
+        system_prompt=SYSTEM,
+        user_prompt=USER,
+        tool_name="write_part",
+        response={"lily_music": "c'1"},
+        seconds=2.5,
+        usage={"input_tokens": 700, "answer_tokens": 90, "thinking_tokens": 510},
+        finish_reason="STOP",
+        model_version="gemini-3.6-flash-001",
+        request_id="req-123",
+    )
+    log.close()
+
+    (entry,) = _flow(log)
+    assert entry["usage"] == {
+        "input_tokens": 700,
+        "answer_tokens": 90,
+        "thinking_tokens": 510,
+    }
+    assert entry["finish_reason"] == "STOP"
+    assert entry["model_version"] == "gemini-3.6-flash-001"
+    assert entry["request_id"] == "req-123"
+    assert entry["purpose"] == "repair"
+    assert entry["repairs"] == ["a1b2c3d4"]
+
+
+def test_a_turn_without_usage_still_records(tmp_path: Path) -> None:
+    """A transport failure has no response to read usage from."""
+    log = RunLog(tmp_path / "logs")
+    log.llm_turn(
+        turn=TurnInfo(label="write_part"),
+        model="m",
+        temperature=None,
+        attempt=1,
+        attempts=1,
+        system_prompt=SYSTEM,
+        user_prompt=USER,
+        tool_name="write_part",
+        error="boom",
+    )
+    log.close()
+
+    (entry,) = _flow(log)
+    assert entry["usage"] is None
+    assert entry["purpose"] == "first", "purpose defaults rather than being absent"
+
+
+def test_a_wait_is_its_own_event_not_part_of_a_turn(tmp_path: Path) -> None:
+    """Backoff sleeps must be legible as waiting, not hidden inside `seconds` —
+    a run stalling on quota looked like slow inference in the audit."""
+    log = RunLog(tmp_path / "logs")
+    log.wait(seconds=40.0, reason="429 RESOURCE_EXHAUSTED")
+    log.close()
+
+    (entry,) = _flow(log)
+    assert entry["kind"] == "wait"
+    assert entry["seconds"] == 40.0
+    assert "429" in str(entry["reason"])
+
+
+def test_validation_items_travel_structured_beside_the_messages(tmp_path: Path) -> None:
+    """Cross-sweep survival analysis needed verbatim string matching in the
+    audit; a stable identity beside the prose makes it a computation."""
+    log = RunLog(tmp_path / "logs")
+    items = [
+        {
+            "id": "deadbeef",
+            "kind": "parallels",
+            "section": "B",
+            "voices": ["cello", "viola"],
+            "voice": "viola",
+            "bar": 6,
+            "message": "cello and viola move in parallel octaves into bar 6",
+            "routing": "only-free-voice",
+        }
+    ]
+    log.validation(
+        what="the cross-voice checks",
+        loop_key="section",
+        attempt=1,
+        budget=3,
+        messages=["cello and viola move in parallel octaves into bar 6"],
+        items=items,
+    )
+    log.close()
+
+    (entry,) = _flow(log)
+    assert entry["items"] == items
+    assert entry["messages"] == ["cello and viola move in parallel octaves into bar 6"]
+
+
 def test_a_failed_attempt_is_recorded_too(tmp_path: Path) -> None:
     """The turn that went wrong is the one worth reading."""
     log = RunLog(tmp_path / "logs")

@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from cadenzra.common.errors import LLMOutputError
-from cadenzra.llm.clients.gemini import _extract
+from cadenzra.llm.clients.gemini import _extract, _facts_of
 
 
 @dataclass
@@ -34,12 +34,25 @@ class _Content:
 @dataclass
 class _Candidate:
     content: _Content
+    finish_reason: Any = None
+
+
+@dataclass
+class _Usage:
+    prompt_token_count: int | None = None
+    candidates_token_count: int | None = None
+    thoughts_token_count: int | None = None
+    cached_content_token_count: int | None = None
+    total_token_count: int | None = None
 
 
 @dataclass
 class _Response:
     candidates: list[_Candidate]
     text: str = ""
+    usage_metadata: _Usage | None = None
+    model_version: str | None = None
+    response_id: str | None = None
 
 
 def _response(parts: list[_Part]) -> Any:
@@ -124,3 +137,41 @@ def test_a_spent_budget_is_not_worth_waiting_for() -> None:
             "project has exceeded its monthly spending cap.'}}"
         )
     )
+
+
+def test_usage_and_provenance_are_read_off_the_response() -> None:
+    """The API returns exact token counts on every response; discarding them is
+    why the cost audit had to estimate from character counts."""
+    response = _response([_Part(function_call=_Call("write_part", {"lily_music": "c'1"}))])
+    response.usage_metadata = _Usage(
+        prompt_token_count=700,
+        candidates_token_count=90,
+        thoughts_token_count=510,
+        cached_content_token_count=0,
+        total_token_count=1300,
+    )
+    response.model_version = "gemini-3.6-flash-001"
+    response.response_id = "req-123"
+    response.candidates[0].finish_reason = "STOP"
+
+    facts = _facts_of(response)
+
+    assert facts.usage == {
+        "input_tokens": 700,
+        "answer_tokens": 90,
+        "thinking_tokens": 510,
+        "cached_tokens": 0,
+        "total_tokens": 1300,
+    }
+    assert facts.finish_reason == "STOP"
+    assert facts.model_version == "gemini-3.6-flash-001"
+    assert facts.request_id == "req-123"
+
+
+def test_a_response_without_usage_yields_no_usage() -> None:
+    response = _response([_Part(function_call=_Call("write_part", {"lily_music": "c'1"}))])
+
+    facts = _facts_of(response)
+
+    assert facts.usage is None
+    assert facts.finish_reason is None

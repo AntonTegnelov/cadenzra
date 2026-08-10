@@ -25,6 +25,7 @@ from cadenzra.app.config import RunConfig
 from cadenzra.app.pipeline import (
     LayerServices,
     derive_style,
+    feedback_dicts,
     generate_harmony,
     generate_motifs,
     plan_lyrics,
@@ -246,6 +247,7 @@ def _voice_to_convergence(
                 attempt=attempt,
                 budget=services.budgets.voice,
                 messages=[item.message for item in feedback],
+                items=feedback_dicts(feedback, {section.section_id: section.meter}),
             )
 
     raise BudgetExhaustedError(
@@ -401,6 +403,7 @@ def _lyrics_to_convergence(
                 attempt=attempt,
                 budget=services.budgets.lyric,
                 messages=[item.message for item in feedback],
+                items=feedback_dicts(feedback, {section.section_id: section.meter}),
             )
 
     raise BudgetExhaustedError(
@@ -557,6 +560,7 @@ def assemble_and_verify(
                 attempt=attempt,
                 budget=services.budgets.section,
                 messages=[item.message for item in feedback],
+                items=feedback_dicts(feedback, _section_meters(state)),
             )
         if not targets:
             break
@@ -574,6 +578,12 @@ def assemble_and_verify(
         loop_key=attempt_key("section", None, None),
         attempts=services.budgets.section,
     )
+
+
+def _section_meters(state: PipelineState) -> dict[SectionId, MeterSpec]:
+    """Each section's meter, for turning feedback offsets into bar numbers."""
+    assert state.structure is not None
+    return {section.section_id: section.meter for section in state.structure.sections}
 
 
 def _targets_of(
