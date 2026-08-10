@@ -26,6 +26,7 @@ from cadenzra.model.primitives.time import bar_containing, offset_of
 from cadenzra.model.spec import VoiceSpec
 from cadenzra.model.structure import SectionPlan
 from cadenzra.model.voice import VoicePart
+from cadenzra.notation.keys import prefer_flats
 from cadenzra.notation.scaffold import (
     ScaffoldedSource,
     bar_of_fragment_position,
@@ -214,7 +215,9 @@ def _check_range(
     feedback = []
     for notes in extract_voice_notes(mido.MidiFile(midi_path)).values():
         for note in notes:
-            pitch = Pitch.from_midi_number(note.midi_pitch)
+            pitch = Pitch.from_midi_number(
+                note.midi_pitch, prefer_flats=prefer_flats(section.key)
+            )
             if pitch.is_within(voice_spec.range_low, voice_spec.range_high):
                 continue
             bar = bar_containing(note.onset, section.meter)
@@ -226,8 +229,8 @@ def _check_range(
                     section,
                     bar=bar,
                     message=(
-                        f"{pitch.to_scientific()} in bar {bar} is "
-                        f"{'above' if above else 'below'} the {part.voice_id} "
+                        f"{pitch.to_scientific()} ({pitch.to_lilypond()}) in bar {bar} "
+                        f"is {'above' if above else 'below'} the {part.voice_id} "
                         f"{'ceiling' if above else 'floor'} of {limit.to_scientific()}"
                     ),
                 )

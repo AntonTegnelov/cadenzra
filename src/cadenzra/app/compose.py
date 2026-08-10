@@ -24,6 +24,7 @@ import mido
 from cadenzra.app.config import RunConfig
 from cadenzra.app.pipeline import (
     LayerServices,
+    analyzed_motifs,
     derive_style,
     feedback_dicts,
     generate_harmony,
@@ -35,7 +36,6 @@ from cadenzra.app.summary import write_run_summary
 from cadenzra.common.errors import (
     BudgetExhaustedError,
     CadenzraError,
-    LilypondCompileError,
     LLMOutputError,
 )
 from cadenzra.graph.routing import cheapest_level
@@ -47,19 +47,17 @@ from cadenzra.model.critique import CritiqueBrief
 from cadenzra.model.feedback import FeedbackItem, FeedbackLevel
 from cadenzra.model.interpretation import InterpretationParams
 from cadenzra.model.lyrics import SectionLyricDirective, SectionLyrics
-from cadenzra.model.primitives.ids import MotifId, SectionId, VoiceId
+from cadenzra.model.primitives.ids import SectionId, VoiceId
 from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.spec import PieceSpec
 from cadenzra.model.state import PipelineState, attempt_key, voice_key
 from cadenzra.model.structure import GroupRef, SectionPlan
 from cadenzra.model.voice import VoicePart
 from cadenzra.notation.assemble import assemble_score, assemble_section
-from cadenzra.notation.scaffold import scaffold_fragment
 from cadenzra.performance.interpret import interpret_performance
 from cadenzra.verification.audio import validate_audio_dynamics
 from cadenzra.verification.lyrics import missing_devices, validate_section_lyrics
 from cadenzra.verification.midi_analysis import (
-    NoteEvent,
     channel_track_invariant_ok,
     extract_voice_notes,
 )
@@ -960,7 +958,7 @@ def _check_sections(
     assert plan is not None and state.style is not None
 
     voices = extract_voice_notes(score_midi)
-    motif_notes = _analyzed_motifs(state, services)
+    motif_notes = analyzed_motifs(state, services.renderer, services.workdir)
     feedback: list[FeedbackItem] = []
     elapsed = Fraction(0)
 
@@ -984,43 +982,6 @@ def _check_sections(
     return feedback
 
 
-def _analyzed_motifs(
-    state: PipelineState, services: ComposeServices
-) -> dict[MotifId, list[NoteEvent]]:
-    """Each motif compiled and analyzed, so declared entries can be verified.
-
-    This is what turns "themes that return" from a claim into a checked
-    property: `validate_section` compares the realized music at each declared
-    position against these notes under the declared relation (docs/03).
-    """
-    if state.motifs is None or state.structure is None:
-        return {}
-
-    analyzed: dict[MotifId, list[NoteEvent]] = {}
-    for motif_id, motif in state.motifs.motifs.items():
-        meter = _motif_meter(state, motif_id)
-        scaffolded = scaffold_fragment(motif.lily_music, meter)
-        try:
-            result = services.renderer.compile(
-                scaffolded.source, services.workdir / f"motif-{motif_id}"
-            )
-        except LilypondCompileError:
-            continue
-        if result.midi_path is None:
-            continue
-        for notes in extract_voice_notes(mido.MidiFile(result.midi_path)).values():
-            analyzed[motif_id] = notes
-            break
-    return analyzed
-
-
-def _motif_meter(state: PipelineState, motif_id: MotifId) -> MeterSpec:
-    """The meter a motif is written in — the first section that declares it."""
-    assert state.structure is not None
-    for section in state.structure.sections:
-        if any(entry.motif_id == motif_id for entry in section.material):
-            return section.meter
-    return state.spec.meters_allowed[0]
 
 
 def _write_partials(

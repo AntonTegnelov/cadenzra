@@ -22,6 +22,7 @@ from cadenzra.model.spec import PieceSpec, VoiceSpec
 from cadenzra.model.structure import SectionPlan, StructurePlan
 from cadenzra.model.voice import VoicePart
 from cadenzra.notation.instruments import instrument_name
+from cadenzra.notation.keys import parse_key
 from cadenzra.notation.scaffold import LILYPOND_VERSION, lily_time_command
 
 _INDENT: Final = "  "
@@ -124,27 +125,17 @@ def _section_header(section: SectionPlan) -> str:
 def _key_command(key: str) -> str:
     """`\\key` from a plan's key string, e.g. "d phrygian" or "Bb major".
 
-    Unrecognized modes fall back to no key signature rather than guessing: an
+    Unrecognized keys fall back to no key signature rather than guessing: an
     accidental-heavy passage engraves correctly either way, and inventing a key
     signature would silently change what the score says.
     """
-    words = key.strip().split()
-    if not words:
+    parsed = parse_key(key)
+    if parsed is None:
         return ""
-    try:
-        # `\key` takes a bare pitch name, with no octave mark: `\key d \minor`,
-        # never `\key d' \minor`.
-        tonic = Pitch.from_scientific(f"{words[0].capitalize()}3").to_lilypond()
-    except ValueError:
-        return ""
-    modes = {
-        "major", "minor", "ionian", "dorian", "phrygian",
-        "lydian", "mixolydian", "aeolian", "locrian",
-    }
-    mode = words[1].lower() if len(words) > 1 else "major"
-    if mode not in modes:
-        return ""
-    return f"\\key {tonic} \\{mode}"
+    tonic, mode = parsed
+    # The parser's tonic sits at octave 3, which `to_lilypond` renders with no
+    # octave mark — exactly the bare name `\key` wants (`\key d \minor`).
+    return f"\\key {tonic.to_lilypond()} \\{mode}"
 
 
 def assemble_score(

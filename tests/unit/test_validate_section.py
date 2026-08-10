@@ -77,15 +77,26 @@ def test_clean_counterpoint_is_accepted() -> None:
 
 
 def test_parallel_fifths_are_caught_and_located() -> None:
+    """Both voices are free here, so each is told — the double-fugue autopsy
+    found the alphabetical single-target routing starved half of every pair of
+    its feedback."""
     voices = _voices(soprano=[curr for curr in (67, 69)], bass=[60, 62])
 
     feedback = validate_section(voices, _section(), NO_HARMONY, _style())
 
-    assert len(feedback) == 1
-    assert "parallel fifths" in feedback[0].message
-    assert "bar 1, beat 2" in feedback[0].message
-    assert feedback[0].level == "section"
-    assert feedback[0].section_id == "A"
+    assert len(feedback) == 2
+    assert {item.voice_id for item in feedback} == {"soprano", "bass"}
+    for item in feedback:
+        assert "parallel fifths" in item.message
+        assert "bar 1, beat 2" in item.message
+        assert item.level == "section"
+        assert item.section_id == "A"
+        assert item.kind == "parallels"
+        assert item.voices == ("bass", "soprano")
+        assert item.routing == "both-free"
+    assert len({item.fingerprint() for item in feedback}) == 1, (
+        "one fault, routed twice — not two faults"
+    )
 
 
 def test_parallel_octaves_are_caught() -> None:
@@ -93,8 +104,24 @@ def test_parallel_octaves_are_caught() -> None:
 
     feedback = validate_section(voices, _section(), NO_HARMONY, _style())
 
-    assert len(feedback) == 1
-    assert "parallel octaves" in feedback[0].message
+    assert len(feedback) == 2
+    assert all("parallel octaves" in item.message for item in feedback)
+
+
+def test_a_run_of_parallels_is_one_fault_not_one_per_beat() -> None:
+    """A five-note parallel passage used to emit four violations — the audit
+    measured 207 events collapsing to ~44 passages. One passage, one fault."""
+    voices = _voices(
+        soprano=[72, 74, 76, 77, 79], bass=[60, 62, 64, 65, 67]
+    )
+
+    feedback = validate_section(voices, _section(bars=2), NO_HARMONY, _style())
+
+    assert len(feedback) == 2, "one item per routed voice, not per attack"
+    item = feedback[0]
+    assert "through" in item.message, "the message names the passage's extent"
+    assert item.span is not None
+    assert item.span[0] < item.span[1]
 
 
 def test_the_same_music_passes_when_the_style_allows_parallels() -> None:
@@ -129,6 +156,23 @@ def test_a_sustained_clash_against_the_chord_is_flagged() -> None:
     assert "D#5" in feedback[0].message
     assert "harmony is C" in feedback[0].message
     assert feedback[0].voice_id == "soprano"
+    assert feedback[0].kind == "held_tone"
+
+
+def test_a_flat_key_spells_its_feedback_in_flats() -> None:
+    """The double-fugue's immortal violation told a cello that wrote ees' to
+    fix a "D#4" — MIDI spelling leaking into the musician surface. In a flat
+    key the message speaks flats, and quotes the note as the voice wrote it."""
+    voices = _voices(soprano=[75], bass=[60])
+
+    feedback = validate_section(
+        voices, _section(key="c minor"), _skeleton("C"), _style()
+    )
+
+    assert len(feedback) == 1
+    assert "Eb5" in feedback[0].message
+    assert "ees''" in feedback[0].message
+    assert "D#5" not in feedback[0].message
 
 
 def test_ordinary_tensions_are_not_treated_as_wrong_notes() -> None:
@@ -305,3 +349,111 @@ def test_a_rhythm_mismatch_says_which_rhythm_is_needed() -> None:
     assert len(feedback) == 1
     assert "needs the durations 4 4 4 4" in feedback[0].message
     assert "and has 2 2 2 2" in feedback[0].message
+
+
+# --- routing around prescribed entries -------------------------------------
+#
+# The double-fugue autopsy, mechanism 2c/2d: every pair violation went to the
+# alphabetically-first voice, which in a fugue exposition is routinely the one
+# whose bars the entry check pins note-for-note. The router must never ask a
+# prescribed voice to move, and must go loud when nobody can.
+
+UPPER_LINE = [72, 74, 76, 77]
+LOWER_LINE = [60, 62, 64, 65]  # parallel octaves against UPPER_LINE throughout
+
+
+def _both_lines() -> dict[VoiceId, list[NoteEvent]]:
+    return _voices(soprano=UPPER_LINE, bass=LOWER_LINE)
+
+
+def _motifs() -> dict[str, list[NoteEvent]]:
+    return {
+        "upper_subject": _voices(m=UPPER_LINE)["m"],
+        "lower_subject": _voices(m=LOWER_LINE)["m"],
+    }
+
+
+def test_a_pair_violation_routes_to_the_free_voice_not_the_alphabetical_one() -> None:
+    """The bass is prescribed here; blaming it anyway (the old alphabetical
+    rule) asks a voice that cannot move to fix the relationship."""
+    section = _section(
+        bars=4,
+        material=[
+            MaterialEntry(motif_id="lower_subject", voice_id="bass", bar=1, relation="exact")
+        ],
+    )
+
+    feedback = validate_section(
+        _both_lines(), section, NO_HARMONY, _style(), _motifs()
+    )
+
+    parallels = [item for item in feedback if item.kind == "parallels"]
+    assert len(parallels) == 1
+    assert parallels[0].voice_id == "soprano"
+    assert parallels[0].routing == "only-free-voice"
+
+
+def test_a_clash_between_two_prescribed_lines_goes_loud_not_to_a_voice() -> None:
+    """When both lines are pinned by entries, no voice-level repair exists —
+    the plan owns the contradiction. The item says so instead of burning the
+    section budget on an impossible fix."""
+    section = _section(
+        bars=4,
+        material=[
+            MaterialEntry(motif_id="upper_subject", voice_id="soprano", bar=1, relation="exact"),
+            MaterialEntry(motif_id="lower_subject", voice_id="bass", bar=1, relation="exact"),
+        ],
+    )
+
+    feedback = validate_section(
+        _both_lines(), section, NO_HARMONY, _style(), _motifs()
+    )
+
+    parallels = [item for item in feedback if item.kind == "parallels"]
+    assert len(parallels) == 1
+    assert parallels[0].voice_id is None
+    assert parallels[0].routing == "unfixable"
+    assert parallels[0].voices == ("bass", "soprano")
+
+
+def test_a_held_clash_inside_a_prescribed_entry_is_unfixable_at_voice_level() -> None:
+    """The immortal D#4: the subject itself clashing with the grid. Routing it
+    to the voice spent three sweeps not fixing it."""
+    section = _section(
+        bars=4,
+        material=[
+            MaterialEntry(motif_id="upper_subject", voice_id="soprano", bar=1, relation="exact")
+        ],
+    )
+    # Eb (75) is not in C; the soprano's first note is prescribed by its entry.
+    # The bass stays on chord tones so the only clash is the prescribed one.
+    voices = _voices(soprano=[75, 74, 76, 77], bass=[48, 52, 55, 48])
+    motifs = {"upper_subject": _voices(m=[75, 74, 76, 77])["m"]}
+
+    feedback = validate_section(
+        voices, section, _skeleton("C", "C", "C", "C"), _style("allow"), motifs
+    )
+
+    held = [item for item in feedback if item.kind == "held_tone"]
+    assert len(held) == 1
+    assert held[0].voice_id is None
+    assert held[0].routing == "unfixable"
+    assert "soprano" in held[0].message
+
+
+def test_entry_spans_cover_the_motif_from_its_entry_bar() -> None:
+    from cadenzra.verification.section import entry_spans
+
+    section = _section(
+        bars=4,
+        material=[
+            MaterialEntry(motif_id="upper_subject", voice_id="soprano", bar=2, relation="exact")
+        ],
+    )
+
+    spans = entry_spans(section, _motifs())
+
+    assert list(spans) == ["soprano"]
+    ((start, end),) = spans["soprano"]
+    assert start == Fraction(1)  # bar 2 of 4/4
+    assert end == Fraction(2)  # four quarters long

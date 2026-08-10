@@ -24,6 +24,7 @@ from cadenzra.notation.chords import (
     ParsedChord,
     parse_chord_symbol,
 )
+from cadenzra.notation.keys import prefer_flats
 from cadenzra.verification.midi_analysis import (
     TICK_TOLERANCE,
     NoteEvent,
@@ -85,17 +86,57 @@ def validate_section(
     stored as notation, and this module does not compile — the node above owns
     the one compile and hands the notes down, which keeps this function pure.
     """
+    spans = entry_spans(section, motif_notes or {})
     return [
-        *_check_parallels(voices, section, style.parallel_fifths_policy),
-        *_check_harmonic_alignment(voices, section, skeleton, style.dissonance_policy),
+        *_check_parallels(voices, section, style.parallel_fifths_policy, spans),
+        *_check_harmonic_alignment(
+            voices, section, skeleton, style.dissonance_policy, spans
+        ),
         *_check_material_entries(voices, section, motif_notes or {}),
     ]
+
+
+def entry_spans(
+    section: SectionPlan, motif_notes: dict[MotifId, list[NoteEvent]]
+) -> dict[VoiceId, list[tuple[Fraction, Fraction]]]:
+    """Where each voice is playing prescribed material, as offset spans.
+
+    A declared entry pins its bars note-for-note, so no repair may ask the
+    voice to move there — the router steers pair violations to the *other*
+    voice, and a clash wholly inside prescribed spans escalates instead. The
+    span is the motif's own length from the entry bar: a lower bound under
+    augmentation, which errs toward treating a voice as free — the failure
+    mode that stays repairable.
+    """
+    spans: dict[VoiceId, list[tuple[Fraction, Fraction]]] = {}
+    for entry in section.material:
+        subject = motif_notes.get(entry.motif_id)
+        if not subject:
+            continue
+        start = offset_of(entry.bar, 1, section.meter)
+        length = subject[-1].end - subject[0].onset
+        spans.setdefault(entry.voice_id, []).append((start, start + length))
+    return spans
+
+
+def _prescribed(
+    spans: dict[VoiceId, list[tuple[Fraction, Fraction]]],
+    voice_id: VoiceId,
+    start: Fraction,
+    end: Fraction,
+) -> bool:
+    """Whether [start, end] touches any of the voice's prescribed spans."""
+    return any(
+        span_start <= end and start < span_end
+        for span_start, span_end in spans.get(voice_id, [])
+    )
 
 
 def _check_parallels(
     voices: dict[VoiceId, list[NoteEvent]],
     section: SectionPlan,
     policy: ParallelsPolicy,
+    spans: dict[VoiceId, list[tuple[Fraction, Fraction]]],
 ) -> list[FeedbackItem]:
     """Parallel fifths and octaves, judged against the style's policy.
 
@@ -109,45 +150,110 @@ def _check_parallels(
     names = sorted(voices)
     for upper_index, upper in enumerate(names):
         for lower in names[upper_index + 1 :]:
-            feedback += _parallels_between(
-                upper, voices[upper], lower, voices[lower], section
-            )
+            for interval, onsets in _parallel_runs(voices[upper], voices[lower]):
+                feedback += _routed_pair_items(
+                    upper, lower, interval, onsets, section, spans
+                )
     return feedback
 
 
-def _parallels_between(
-    upper_name: VoiceId,
-    upper: list[NoteEvent],
-    lower_name: VoiceId,
-    lower: list[NoteEvent],
-    section: SectionPlan,
-) -> list[FeedbackItem]:
-    """Consecutive perfect intervals reached by similar motion."""
+def _parallel_runs(
+    upper: list[NoteEvent], lower: list[NoteEvent]
+) -> list[tuple[str, list[Fraction]]]:
+    """Maximal passages of parallel motion, as (interval, onsets) runs.
+
+    One passage is one fault. The old per-attack accounting turned a five-note
+    parallel run into four violations, which is how a repair prompt ends up
+    carrying 45 complaints for nine problems (the cost audit measured 207
+    events collapsing to ~44 passages).
+    """
     pairs = _simultaneous_pairs(upper, lower)
-    feedback = []
-    for (first_up, first_down), (next_up, next_down) in zip(pairs, pairs[1:], strict=False):
+    runs: list[tuple[str, list[Fraction]]] = []
+    current: list[Fraction] = []
+    current_interval = ""
+    previous_index = -2
+    for index, ((first_up, first_down), (next_up, next_down)) in enumerate(
+        zip(pairs, pairs[1:], strict=False)
+    ):
         first = abs(first_up.midi_pitch - first_down.midi_pitch) % _OCTAVE
         second = abs(next_up.midi_pitch - next_down.midi_pitch) % _OCTAVE
-        if first != second or first not in (0, _PERFECT_FIFTH):
-            continue
-        up_motion = next_up.midi_pitch - first_up.midi_pitch
-        down_motion = next_down.midi_pitch - first_down.midi_pitch
-        if up_motion == 0 or down_motion == 0 or (up_motion > 0) != (down_motion > 0):
+        violating = first == second and first in (0, _PERFECT_FIFTH)
+        if violating:
+            up_motion = next_up.midi_pitch - first_up.midi_pitch
+            down_motion = next_down.midi_pitch - first_down.midi_pitch
+            violating = (
+                up_motion != 0
+                and down_motion != 0
+                and (up_motion > 0) == (down_motion > 0)
+            )
+        if not violating:
             continue
         interval = "octaves" if first == 0 else "fifths"
-        feedback.append(
-            _item(
-                section,
-                voice_id=upper_name,
-                location=next_up.onset,
-                message=(
-                    f"{upper_name} and {lower_name} move in parallel {interval} into "
-                    f"{format_bar_beat(next_up.onset, section.meter)}; approach the "
-                    "second one by contrary or oblique motion"
-                ),
-            )
+        if current and index == previous_index + 1 and interval == current_interval:
+            current.append(next_up.onset)
+        else:
+            if current:
+                runs.append((current_interval, current))
+            current = [next_up.onset]
+            current_interval = interval
+        previous_index = index
+    if current:
+        runs.append((current_interval, current))
+    return runs
+
+
+def _routed_pair_items(
+    upper_name: VoiceId,
+    lower_name: VoiceId,
+    interval: str,
+    onsets: list[Fraction],
+    section: SectionPlan,
+    spans: dict[VoiceId, list[tuple[Fraction, Fraction]]],
+) -> list[FeedbackItem]:
+    """One passage's items, routed to whoever is actually free to move.
+
+    A voice inside a prescribed entry span cannot change without failing the
+    entry check — telling it to is how the double-fugue loop oscillated
+    between two validators. One voice free: it gets the item. Both free: both
+    are told (each sees the other's line on repair). Neither: the item is
+    voiceless and `routing="unfixable"` — the plan owns that contradiction,
+    and the section loop escalates it rather than spending budget.
+    """
+    start, end = onsets[0], onsets[-1]
+    where = (
+        f"into {format_bar_beat(start, section.meter)}"
+        if len(onsets) == 1
+        else (
+            f"from {format_bar_beat(start, section.meter)} through "
+            f"{format_bar_beat(end, section.meter)}"
         )
-    return feedback
+    )
+    each = "the second one" if len(onsets) == 1 else "each"
+    message = (
+        f"{upper_name} and {lower_name} move in parallel {interval} {where}; "
+        f"approach {each} by contrary or oblique motion"
+    )
+    pair = tuple(sorted((upper_name, lower_name)))
+
+    def routed(voice_id: VoiceId | None, routing: str) -> FeedbackItem:
+        return _item(
+            section,
+            voice_id=voice_id,
+            routing=routing,
+            kind="parallels",
+            voices=pair,
+            span=(start, end),
+            location=start,
+            message=message,
+        )
+
+    upper_fixed = _prescribed(spans, upper_name, start, end)
+    lower_fixed = _prescribed(spans, lower_name, start, end)
+    if upper_fixed and lower_fixed:
+        return [routed(None, "unfixable")]
+    if upper_fixed or lower_fixed:
+        return [routed(lower_name if upper_fixed else upper_name, "only-free-voice")]
+    return [routed(voice, "both-free") for voice in pair]
 
 
 def _simultaneous_pairs(
@@ -191,6 +297,7 @@ def _check_harmonic_alignment(
     section: SectionPlan,
     skeleton: HarmonicSkeleton,
     dissonance_policy: str = "",
+    spans: dict[VoiceId, list[tuple[Fraction, Fraction]]] | None = None,
 ) -> list[FeedbackItem]:
     """Sounding pitches against the chord the skeleton declares.
 
@@ -199,6 +306,7 @@ def _check_harmonic_alignment(
     harmony" (docs/05).
     """
     strict = _is_strict(dissonance_policy)
+    spans = spans or {}
     feedback = []
     for event in skeleton.events:
         try:
@@ -222,19 +330,29 @@ def _check_harmonic_alignment(
         permitted = _permitted_pitch_classes(chord, strict)
         for voice_id, notes in sorted(voices.items()):
             for note in notes_sounding_at(notes, event.offset):
-                pitch = Pitch.from_midi_number(note.midi_pitch)
+                pitch = Pitch.from_midi_number(
+                    note.midi_pitch, prefer_flats=prefer_flats(section.key)
+                )
                 if pitch.pc12 in permitted:
                     continue
                 sounding = min(note.end, event.end) - max(note.onset, event.offset)
                 if sounding < threshold:
                     continue
+                # A held clash inside the voice's own prescribed entry is the
+                # subject clashing with the grid — the plan's contradiction,
+                # unfixable by the voice, so it carries no routed target.
+                pinned = _prescribed(spans, voice_id, note.onset, note.end)
                 feedback.append(
                     _item(
                         section,
-                        voice_id=voice_id,
+                        voice_id=None if pinned else voice_id,
                         location=note.onset,
+                        kind="held_tone",
+                        voices=(voice_id,),
+                        routing="unfixable" if pinned else None,
                         message=(
-                            f"{voice_id} holds {pitch.to_scientific()} through "
+                            f"{voice_id} holds {pitch.to_scientific()} "
+                            f"({pitch.to_lilypond()}) through "
                             f"{format_bar_beat(event.offset, section.meter)}, where the "
                             f"harmony is {event.chord}; resolve it by step or make it a "
                             "chord tone"
@@ -264,6 +382,8 @@ def _check_material_entries(
                 _item(
                     section,
                     voice_id=entry.voice_id,
+                    kind="entry",
+                    voices=(entry.voice_id,),
                     message=(
                         f"the entry at bar {entry.bar} names {entry.motif_id!r}, which "
                         "is not in the motif library"
@@ -279,6 +399,8 @@ def _check_material_entries(
                 _item(
                     section,
                     voice_id=entry.voice_id,
+                    kind="entry",
+                    voices=(entry.voice_id,),
                     message=(
                         f"the entry at bar {entry.bar} declares the relation "
                         f"{entry.relation!r}, which is not one the checker knows"
@@ -311,6 +433,8 @@ def _check_material_entries(
                 _item(
                     section,
                     voice_id=entry.voice_id,
+                    kind="entry",
+                    voices=(entry.voice_id,),
                     location=result.first_deviation_offset or start,
                     message=(
                         f"the {entry.voice_id} entry at bar {entry.bar} should be "
@@ -324,6 +448,8 @@ def _check_material_entries(
                 _item(
                     section,
                     voice_id=entry.voice_id,
+                    kind="entry",
+                    voices=(entry.voice_id,),
                     location=start,
                     message=(
                         f"the {entry.voice_id} entry at bar {entry.bar} has the right "
@@ -366,6 +492,10 @@ def _item(
     voice_id: VoiceId | None = None,
     location: Fraction | None = None,
     evidence: str | None = None,
+    kind: str | None = None,
+    voices: tuple[VoiceId, ...] = (),
+    span: tuple[Fraction, Fraction] | None = None,
+    routing: str | None = None,
 ) -> FeedbackItem:
     return FeedbackItem(
         source=SOURCE,
@@ -375,6 +505,10 @@ def _item(
         location=location,
         message=message,
         evidence=evidence,
+        kind=kind,
+        voices=voices,
+        span=span,
+        routing=routing,
     )
 
 

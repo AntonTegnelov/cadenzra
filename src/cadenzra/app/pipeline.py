@@ -19,8 +19,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
+import mido
+
 from cadenzra.app.config import RetryBudgets
-from cadenzra.common.errors import BudgetExhaustedError, LLMOutputError
+from cadenzra.common.errors import (
+    BudgetExhaustedError,
+    LilypondCompileError,
+    LLMOutputError,
+)
 from cadenzra.common.runlog import RunLog
 from cadenzra.interfaces.llm import GeneratorLLM
 from cadenzra.interfaces.rendering import ScoreRenderer
@@ -29,14 +35,16 @@ from cadenzra.model.feedback import FeedbackItem, FeedbackLevel
 from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.lyrics import LyricPlan
 from cadenzra.model.motif import Motif, MotifLibrary
-from cadenzra.model.primitives.ids import SectionId
+from cadenzra.model.primitives.ids import MotifId, SectionId
 from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.primitives.time import bar_containing
 from cadenzra.model.state import PipelineState, attempt_key
 from cadenzra.model.structure import SectionPlan, StructurePlan
 from cadenzra.model.style import StylePack
+from cadenzra.notation.scaffold import scaffold_fragment
 from cadenzra.verification.harmony import validate_harmony
 from cadenzra.verification.lyrics import validate_lyric_plan
+from cadenzra.verification.midi_analysis import NoteEvent, extract_voice_notes
 from cadenzra.verification.motifs import validate_motifs
 from cadenzra.verification.structure import validate_structure
 
@@ -262,6 +270,45 @@ def _motifs_in(state: PipelineState, section: SectionPlan) -> list[Motif]:
         for entry in section.material
         if entry.motif_id in state.motifs
     ]
+
+
+def analyzed_motifs(
+    state: PipelineState, renderer: ScoreRenderer, workdir: Path
+) -> dict[MotifId, list[NoteEvent]]:
+    """Each motif compiled and analyzed, so declared entries can be verified.
+
+    This is what turns "themes that return" from a claim into a checked
+    property: `validate_section` compares the realized music at each declared
+    position against these notes under the declared relation (docs/03). It
+    lives here rather than in `compose` so the harmony loop can consult the
+    same notes when it checks the grid against declared entries.
+    """
+    if state.motifs is None or state.structure is None:
+        return {}
+
+    analyzed: dict[MotifId, list[NoteEvent]] = {}
+    for motif_id, motif in state.motifs.motifs.items():
+        meter = _motif_meter(state, motif_id)
+        scaffolded = scaffold_fragment(motif.lily_music, meter)
+        try:
+            result = renderer.compile(scaffolded.source, workdir / f"motif-{motif_id}")
+        except LilypondCompileError:
+            continue
+        if result.midi_path is None:
+            continue
+        for notes in extract_voice_notes(mido.MidiFile(result.midi_path)).values():
+            analyzed[motif_id] = notes
+            break
+    return analyzed
+
+
+def _motif_meter(state: PipelineState, motif_id: MotifId) -> MeterSpec:
+    """The meter a motif is written in — the first section that declares it."""
+    assert state.structure is not None
+    for section in state.structure.sections:
+        if any(entry.motif_id == motif_id for entry in section.material):
+            return section.meter
+    return state.spec.meters_allowed[0]
 
 
 def feedback_dicts(
