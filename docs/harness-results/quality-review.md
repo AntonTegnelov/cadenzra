@@ -279,3 +279,84 @@ Any of the thirteen specs in `app/specs.py`. Each run writes its log to
 `out/<spec>/runs/<timestamp>/` — `llm.jsonl` for verbatim prompts and responses,
 `narrative.md` for the same flow with the model's reasoning, `technical.log` at
 whatever `--log-level` asks for. Every diagnosis above came from reading those.
+
+---
+
+## Addendum — the lite-tier campaign (2026-08-10, evening)
+
+After the cost audit's fix stack landed, the five unfinished probes were
+re-driven on `gemini-3.1-flash-lite` for every capability (a deliberate dev
+constraint: cost control, plus the weakest model as a stress instrument). The
+campaign ran 48 resumed runs totalling 897 turns, ~1.69M input and ~250k answer
+tokens — pennies at lite pricing, versus the audit's finding that a single
+pre-fix probe could burn a spend cap. Every failed run cost a fraction of a
+cent in seconds, wrote its salvage into `state.json`, and each `--resume`
+started from everything already converged.
+
+**The load-bearing result is not the pieces; it is the taxonomy.** Driving the
+weakest model through the loops exposed twelve system faults that stronger
+models had been papering over, each fixed test-first the same evening:
+
+1. `rewrite_bars`' integer enum crashed the vendor type on the first live
+   patch (the offline suite never constructed `types.Tool`).
+2. A failure anywhere in the voice layer discarded every converged voice
+   since the last layer boundary (`CadenzraError.partial_state` salvage).
+3. LilyPond reports only the *first* failed bar check per compile, so serial
+   discovery of several bad bars burned one attempt each (free reveal
+   cycles: a patch that clears its offered bars pays nothing for what the
+   next compile unmasks).
+4. `_check_range` emitted one item per out-of-range *note* — ~80 for one
+   stratospheric flute — flooding the repair prompt (now one item per bar
+   and side, naming the count and the farthest offender).
+5. Shown its rejected part under "change as little else as possible", the
+   model re-emitted it nearly verbatim, mistake included (a rewrite whose
+   feedback fingerprints equal what it was shown forfeits the copy and
+   regenerates from scratch).
+6. **"off by X" was the compiler's cursor position, not the deficit** — a
+   hook holding 1/8 in 4/4 was told it was off by 7/8, and two model tiers
+   chased that wrong number for seven attempts. The single worst feedback
+   bug found to date.
+7. The motif prompt named one meter for the whole batch while the validator
+   checked each motif in its own declaring section's meter — an instruction
+   no model could satisfy (metal-kpop's eight identical rejections, on the
+   big tier and the small one alike).
+8. Patches now declare their durations in a schema field the parser sums as
+   exact fractions — the copy-reflex cannot pass an arithmetic gate — with a
+   literal fix named when the sum misses ("add an r16"). The same
+   declaration on whole parts was tried and reverted the same evening: on a
+   16-bar part the model declared its 4-bar pattern and burned budgets on
+   format, so the gate lives only where the evidence supports it.
+9. A patch that repairs six of seven offered bars is not a failed patch;
+   the fallback full rewrite no longer throws partial repairs away.
+10. A motif entering a section in a foreign meter is now taught the tie
+    technique (`4` becomes `8~ | 8`) exactly when the meters differ — the
+    metal-kpop hook was mechanically unable to satisfy both the entry check
+    and the meter check without it, and nothing had ever said so.
+11. A pinned held tone that indicts the grid now loops back: the section's
+    harmony regenerates once with the violation quoted before the run may
+    go loud. The fresh double-fugue's Eb-over-G7 — the audit's motivating
+    immortal violation — is exactly this class.
+12. Two prescribed subjects that move in parallel octaves at their declared
+    joint entry are rejected at motif time, before anything is built, using
+    the same parallel-run math as the section checker.
+
+**Where the pieces stand.** All five advanced from their spend-cap corpses to
+within one voice of completion, and the walls that remain are model-capability
+walls with varied (not repeating) failure signatures: metal-kpop (33 parts and
+all seven lyric sections written, blinded craft review firing live) sticks on
+vocal1's 7/8 breakdown bars; kpop (25 parts) on one Outro figuration voice;
+orchestra (37 parts across five sections) on low-register discipline a
+semitone below spec floors; longform cleared its inherited grid contradiction
+through the regrid loop-back and is mid-Movement-III; double-fugue converged
+compatible subjects under the new collision check and a grid that honors them,
+and now walks the voice layer. `budget_exhausted` on the lite tier is an
+accepted dev outcome — the pipeline's job is to be *honest* about it, and it
+now is: every failure names its layer, its bar, and its true deficit.
+
+**What the lite tier taught about feedback.** The constant-signature test is
+the diagnostic to keep: when a failure repeats *identically* across attempts
+(and especially across model tiers), it is the system lying to the model —
+mislabelled deficits, contradictory instructions, information withheld. When
+failures vary across attempts, it is the model, and budgets or better models
+are the levers. Every one of the twelve fixes above began as a constant
+signature.
