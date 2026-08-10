@@ -154,7 +154,9 @@ def build_lyrics_prompt(ctx: LyricsContext) -> str:
     if ctx.refrain_source is not None:
         blocks.append(
             "This section is a refrain: it brings back the words of section "
-            f"{directive.refrain_of} unchanged. Those words were:\n"
+            f"{directive.refrain_of} unchanged. If this section has more music "
+            "than that one, sing them through in full first and then carry on "
+            "with new words. Those words were:\n"
             + _lyrics_text(ctx.refrain_source.voices[0].text if
                            ctx.refrain_source.voices else "")
         )

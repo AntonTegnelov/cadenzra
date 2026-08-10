@@ -251,6 +251,24 @@ def test_a_refrain_must_bring_the_words_back() -> None:
     assert "the light falls slow" in problems[0]
 
 
+def test_a_refrain_may_reprise_and_then_carry_on() -> None:
+    """A final chorus with more music than the first repeats the hook and
+    extends it, which is what a final chorus is for. Demanding exact equality
+    rejected one that had reprised every word correctly."""
+    source = _lyrics("A", soprano=["the light falls slow"])
+    extended = _lyrics(
+        "C", soprano=["the light falls slow", "and will not come again"]
+    )
+
+    assert _validate(
+        extended,
+        SectionLyricDirective(
+            section_id="C", story_beat="return", refrain_of="A", relationship="solo"
+        ),
+        refrain_source=source,
+    ) == []
+
+
 def test_a_refrain_that_returns_unchanged_passes() -> None:
     source = _lyrics("A", soprano=["the light falls slow"])
     same = _lyrics("C", soprano=["The light falls slow"])  # casing is not a change

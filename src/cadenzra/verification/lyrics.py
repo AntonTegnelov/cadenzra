@@ -27,6 +27,7 @@ from cadenzra.model.lyrics import (
     LyricPlan,
     SectionLyricDirective,
     SectionLyrics,
+    VoiceLyrics,
 )
 from cadenzra.model.primitives.ids import SectionId
 from cadenzra.model.spec import PieceSpec
@@ -266,7 +267,7 @@ def _check_refrain(
         original = source_by_voice.get(voice.voice_id)
         if original is None:
             continue
-        if _normalized(voice.text) != _normalized(original.text):
+        if not _brings_back(voice, original):
             return [
                 _item(
                     section.section_id,
@@ -274,11 +275,36 @@ def _check_refrain(
                     message=(
                         f"section {section.section_id} is a refrain of "
                         f"{directive.refrain_of}, so {voice.voice_id} sings those "
-                        f'words again: "{original.text}"'
+                        f'words again: "{original.text}". If this section has more '
+                        "music than that one, bring them back in full first and "
+                        "then carry on."
                     ),
                 )
             ]
     return []
+
+
+def _brings_back(voice: VoiceLyrics, original: VoiceLyrics) -> bool:
+    """Whether a refrain reprises its source.
+
+    Containment rather than equality, because a final chorus that repeats the
+    hook and then extends it over the extra bars is doing the right thing
+    musically — and demanding exact equality rejected one that had reprised
+    every word correctly. The contract is that the words come back, not that
+    nothing else happens.
+    """
+    words = _words(voice)
+    wanted = _words(original)
+    if not wanted:
+        return True
+    return any(
+        words[start : start + len(wanted)] == wanted
+        for start in range(len(words) - len(wanted) + 1)
+    )
+
+
+def _words(voice: VoiceLyrics) -> list[str]:
+    return [word for line in voice.lines for word in line.words]
 
 
 def _check_scheme(
@@ -313,9 +339,6 @@ def _note_count(lily_music: str) -> int:
             count += 1
     return count
 
-
-def _normalized(text: str) -> str:
-    return " ".join(text.lower().split())
 
 
 def _singing_voices(section: SectionPlan, spec: PieceSpec) -> list[str]:
