@@ -19,11 +19,12 @@ from typing import Any
 
 from cadenzra.common.errors import LLMOutputError
 from cadenzra.llm.parsers.durations import duration_value
+from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.notation.scaffold import count_bar_checks
 
 
 def parse_bar_patch(
-    payload: dict[str, Any], editable_bars: list[int], *, bar_length: Fraction
+    payload: dict[str, Any], editable_bars: list[int], *, meter: MeterSpec
 ) -> dict[int, str]:
     """The replacements by bar number, or `LLMOutputError`."""
     replacements = payload.get("replacements")
@@ -57,11 +58,12 @@ def parse_bar_patch(
         total = sum(
             (duration_value(token) for token in durations.split()), Fraction(0)
         )
-        if total != bar_length:
+        if total != meter.bar_length:
             raise LLMOutputError(
                 f"the replacement for bar {bar} declares durations summing to "
-                f"{total} of a whole note, but one bar here holds {bar_length} — "
-                "recount, then write notes that fill the bar exactly"
+                f"{total} of a whole note, but one bar of "
+                f"{meter.surface_string()} holds {meter.bar_length} — recount, "
+                "then write notes that fill the bar exactly"
             )
         if bar not in editable:
             raise LLMOutputError(

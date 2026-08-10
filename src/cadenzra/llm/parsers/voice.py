@@ -11,7 +11,6 @@ duplicating that here would be the same guard in two places (docs/08,
 principle 6).
 """
 
-from fractions import Fraction
 from typing import Any
 
 from pydantic import ValidationError
@@ -19,6 +18,7 @@ from pydantic import ValidationError
 from cadenzra.common.errors import LLMOutputError
 from cadenzra.llm.parsers.durations import check_declared_bars
 from cadenzra.model.primitives.ids import SectionId, VoiceId
+from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.voice import TechniqueSpan, VoicePart
 
 
@@ -28,7 +28,7 @@ def parse_voice_part(
     section_id: SectionId,
     voice_id: VoiceId,
     bars: int,
-    bar_length: Fraction,
+    meter: MeterSpec,
 ) -> VoicePart:
     """Build a `VoicePart` from a tool call's arguments.
 
@@ -53,7 +53,7 @@ def parse_voice_part(
     check_declared_bars(
         declaration,
         bars=bars,
-        bar_length=bar_length,
+        meter=meter,
         what=f"the {voice_id} part for section {section_id}",
     )
 

@@ -98,7 +98,7 @@ def test_the_schema_is_constructible_into_a_gemini_tool() -> None:
 
 # --- the parser ------------------------------------------------------------
 
-FOUR_FOUR_BAR = Fraction(1)
+FOUR_FOUR = simple_meter(4, 4)
 
 
 def _payload(bar: str, music: str, durations: str) -> dict[str, object]:
@@ -110,7 +110,7 @@ def _payload(bar: str, music: str, durations: str) -> dict[str, object]:
 def test_the_parser_returns_the_replacements_by_bar() -> None:
     payload = _payload("2", "g'2 g'2 |", "2 2")
 
-    assert parse_bar_patch(payload, [1, 2], bar_length=FOUR_FOUR_BAR) == {2: "g'2 g'2 |"}
+    assert parse_bar_patch(payload, [1, 2], meter=FOUR_FOUR) == {2: "g'2 g'2 |"}
 
 
 def test_a_missing_trailing_bar_check_is_normalized_not_rejected() -> None:
@@ -118,7 +118,7 @@ def test_a_missing_trailing_bar_check_is_normalized_not_rejected() -> None:
     the same normalization the lyric parser applies to `\\lyricmode`."""
     payload = _payload("1", "g'2 g'2", "2 2")
 
-    assert parse_bar_patch(payload, [1], bar_length=FOUR_FOUR_BAR) == {1: "g'2 g'2 |"}
+    assert parse_bar_patch(payload, [1], meter=FOUR_FOUR) == {1: "g'2 g'2 |"}
 
 
 def test_a_declaration_that_does_not_sum_to_the_bar_is_rejected_with_both_numbers() -> None:
@@ -130,7 +130,7 @@ def test_a_declaration_that_does_not_sum_to_the_bar_is_rejected_with_both_number
     payload = _payload("1", "e,4 e,8 e,16 e,8 e,8 e,4 |", "4 8 16 8 8 4")
 
     with pytest.raises(LLMOutputError, match="15/16") as caught:
-        parse_bar_patch(payload, [1], bar_length=FOUR_FOUR_BAR)
+        parse_bar_patch(payload, [1], meter=FOUR_FOUR)
     assert "sum" in str(caught.value)
 
 
@@ -139,7 +139,7 @@ def test_dotted_and_tuplet_durations_declare_their_real_length() -> None:
         "1", "g'8. g'16 \\tuplet 3/2 { g'4 g' g' } g'4 |", "8. 16 1/6 1/6 1/6 4"
     )
 
-    assert parse_bar_patch(payload, [1], bar_length=FOUR_FOUR_BAR) == {
+    assert parse_bar_patch(payload, [1], meter=FOUR_FOUR) == {
         1: "g'8. g'16 \\tuplet 3/2 { g'4 g' g' } g'4 |"
     }
 
@@ -149,11 +149,11 @@ def test_a_missing_or_unreadable_declaration_is_rejected() -> None:
         parse_bar_patch(
             {"replacements": [{"bar": "1", "lily_music": "g'1 |"}]},
             [1],
-            bar_length=FOUR_FOUR_BAR,
+            meter=FOUR_FOUR,
         )
     with pytest.raises(LLMOutputError, match="quaver"):
         parse_bar_patch(
-            _payload("1", "g'1 |", "quaver quaver"), [1], bar_length=FOUR_FOUR_BAR
+            _payload("1", "g'1 |", "quaver quaver"), [1], meter=FOUR_FOUR
         )
 
 
@@ -161,26 +161,26 @@ def test_a_bar_outside_the_editable_set_is_rejected() -> None:
     payload = _payload("3", "g'1 |", "1")
 
     with pytest.raises(LLMOutputError, match="bar 3"):
-        parse_bar_patch(payload, [1, 2], bar_length=FOUR_FOUR_BAR)
+        parse_bar_patch(payload, [1, 2], meter=FOUR_FOUR)
 
 
 def test_a_non_numeric_bar_is_rejected() -> None:
     payload = _payload("two", "g'1 |", "1")
 
     with pytest.raises(LLMOutputError, match="two"):
-        parse_bar_patch(payload, [1, 2], bar_length=FOUR_FOUR_BAR)
+        parse_bar_patch(payload, [1, 2], meter=FOUR_FOUR)
 
 
 def test_a_multi_bar_replacement_is_rejected() -> None:
     payload = _payload("1", "g'1 | a'1 |", "1")
 
     with pytest.raises(LLMOutputError, match="exactly one bar"):
-        parse_bar_patch(payload, [1], bar_length=FOUR_FOUR_BAR)
+        parse_bar_patch(payload, [1], meter=FOUR_FOUR)
 
 
 def test_an_empty_patch_is_rejected() -> None:
     with pytest.raises(LLMOutputError, match="no replacements"):
-        parse_bar_patch({"replacements": []}, [1], bar_length=FOUR_FOUR_BAR)
+        parse_bar_patch({"replacements": []}, [1], meter=FOUR_FOUR)
 
 
 # --- the prompt (the feedback-reaches-prompt contract, patch edition) ------

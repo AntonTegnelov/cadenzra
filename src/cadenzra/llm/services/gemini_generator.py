@@ -229,7 +229,7 @@ class GeminiGenerator:
             section_id=ctx.section.section_id,
             voice_id=ctx.voice.voice_id,
             bars=ctx.section.bars,
-            bar_length=ctx.section.meter.bar_length,
+            meter=ctx.section.meter,
         )
 
     def patch_voice(self, ctx: PatchContext) -> dict[int, str]:
@@ -247,7 +247,7 @@ class GeminiGenerator:
         return parse_bar_patch(
             payload,
             list(ctx.editable_bars),
-            bar_length=ctx.section.meter.bar_length,
+            meter=ctx.section.meter,
         )
 
     def generate_lyrics(self, ctx: LyricsContext) -> SectionLyrics:

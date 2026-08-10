@@ -291,7 +291,7 @@ def test_a_tool_call_parses_into_a_voice_part() -> None:
         section_id="A",
         voice_id="alto",
         bars=1,
-        bar_length=SEVEN_EIGHT.bar_length,
+        meter=SEVEN_EIGHT,
     )
 
     assert part.lily_music == "a'8 a' b' b' c''4. |"
@@ -301,14 +301,14 @@ def test_a_tool_call_parses_into_a_voice_part() -> None:
 def test_lyrics_already_wrapped_are_left_alone() -> None:
     part = parse_voice_part(
         {
-            "lily_music": "a'4. |",
-            "bar_durations": "4.",
+            "lily_music": "a'1 |",
+            "bar_durations": "1",
             "lily_lyrics": "\\lyricmode { one two }",
         },
         section_id="A",
         voice_id="alto",
         bars=1,
-        bar_length=Fraction(3, 8),
+        meter=simple_meter(4, 4),
     )
 
     assert part.lily_lyrics == "\\lyricmode { one two }"
@@ -320,7 +320,7 @@ def test_a_response_without_notation_raises_rather_than_defaulting(
 ) -> None:
     with pytest.raises(LLMOutputError):
         parse_voice_part(
-            payload, section_id="A", voice_id="alto", bars=1, bar_length=Fraction(1)
+            payload, section_id="A", voice_id="alto", bars=1, meter=simple_meter(4, 4)
         )
 
 
@@ -347,7 +347,7 @@ def test_a_declaration_short_of_the_bar_is_rejected_with_both_sums() -> None:
             section_id="A",
             voice_id="bass",
             bars=1,
-            bar_length=Fraction(1),
+            meter=simple_meter(4, 4),
         )
     assert "bar 1" in str(caught.value)
 
@@ -359,7 +359,7 @@ def test_a_declaration_with_the_wrong_bar_count_is_rejected() -> None:
             section_id="A",
             voice_id="bass",
             bars=3,
-            bar_length=Fraction(1),
+            meter=simple_meter(4, 4),
         )
 
 
@@ -370,7 +370,7 @@ def test_a_missing_declaration_is_rejected() -> None:
             section_id="A",
             voice_id="bass",
             bars=1,
-            bar_length=Fraction(1),
+            meter=simple_meter(4, 4),
         )
 
 
@@ -378,14 +378,14 @@ def test_an_unknown_technique_raises_rather_than_being_dropped() -> None:
     with pytest.raises(LLMOutputError, match="does not know"):
         parse_voice_part(
             {
-                "lily_music": "a'4 |",
-                "bar_durations": "4",
+                "lily_music": "a'1 |",
+                "bar_durations": "1",
                 "techniques": [{"technique": "col legno tratto", "from_bar": 1}],
             },
             section_id="A",
             voice_id="alto",
             bars=1,
-            bar_length=Fraction(1, 4),
+            meter=simple_meter(4, 4),
         )
 
 
@@ -500,7 +500,7 @@ def test_barlines_in_lyrics_are_removed_not_carried_through() -> None:
         section_id="A",
         voice_id="bass",
         bars=1,
-        bar_length=Fraction(1),
+        meter=simple_meter(4, 4),
     )
 
     assert part.lily_lyrics is not None

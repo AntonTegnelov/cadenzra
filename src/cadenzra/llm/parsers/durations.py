@@ -11,6 +11,7 @@ notes match it is still the compiler's question (docs/08).
 from fractions import Fraction
 
 from cadenzra.common.errors import LLMOutputError
+from cadenzra.model.primitives.meter import MeterSpec
 
 _PLAIN_VALUES = frozenset({1, 2, 4, 8, 16, 32, 64, 128})
 
@@ -33,20 +34,40 @@ def duration_value(token: str) -> Fraction:
 
 
 def check_declared_bars(
-    declaration: str, *, bars: int, bar_length: Fraction, what: str
+    declaration: str, *, bars: int, meter: MeterSpec, what: str
 ) -> None:
     """Every `|`-separated group must sum to one bar, and the count must match."""
+    bar_length = meter.bar_length
     groups = [group for group in (g.strip() for g in declaration.split("|")) if group]
     if len(groups) != bars:
+        run_total = sum(
+            (duration_value(token) for group in groups for token in group.split()),
+            Fraction(0),
+        )
+        if len(groups) == 1 and run_total == bars * bar_length:
+            # The arithmetic is right; only the separators are missing.
+            raise LLMOutputError(
+                f"{what} declares all its durations as one run — put a | "
+                f"between bars, so the declaration has {bars} groups like the "
+                "music has bars"
+            )
         raise LLMOutputError(
-            f"{what} declares durations for {len(groups)} bars but must fill "
-            f"{bars} bars"
+            f"{what} declares durations for "
+            f"{len(groups)} bar{'' if len(groups) == 1 else 's'} but must fill "
+            f"{bars} bars, each summing to one bar of {meter.surface_string()}"
         )
     for index, group in enumerate(groups, 1):
         total = sum((duration_value(token) for token in group.split()), Fraction(0))
-        if total != bar_length:
-            raise LLMOutputError(
-                f"{what}: the declared durations for bar {index} sum to {total} "
-                f"of a whole note, but one bar here holds {bar_length} — "
-                "recount, then write notes that fill the bar exactly"
-            )
+        if total == bar_length:
+            continue
+        difference = bar_length - total
+        adjust = (
+            f"{difference} of a whole note more is needed"
+            if difference > 0
+            else f"{-difference} of a whole note must go"
+        )
+        raise LLMOutputError(
+            f"{what}: the declared durations for bar {index} sum to {total} "
+            f"of a whole note, but one bar of {meter.surface_string()} holds "
+            f"{bar_length} — {adjust}; recount, then write notes to match"
+        )

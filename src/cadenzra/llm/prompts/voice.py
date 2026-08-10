@@ -77,7 +77,12 @@ def build_voice_prompt(ctx: VoiceContext) -> str:
             "Harmony to write against:\n" + chord_chart(ctx.skeleton, ctx.section.meter)
         )
 
-    blocks.append(f"Write the {ctx.voice.voice_id} part for this section.")
+    blocks.append(
+        f"Write the {ctx.voice.voice_id} part for this section: "
+        f"{ctx.section.bars} bars, so bar_durations declares "
+        f"{ctx.section.bars} groups separated by |, each summing to one bar "
+        f"of {ctx.section.meter.surface_string()}."
+    )
     blocks.append(
         f"Range for {ctx.voice.voice_id}: {range_text(ctx.voice)}. "
         "Every note must fall inside it."
