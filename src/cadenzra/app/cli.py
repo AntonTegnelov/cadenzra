@@ -98,6 +98,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     _add_log_level(compose_cmd)
 
+    replay_cmd = commands.add_parser(
+        "replay", help="re-fire one logged LLM turn against the current code"
+    )
+    replay_cmd.add_argument("spec", choices=sorted(SPECS))
+    replay_cmd.add_argument("run", help="run timestamp under out/<spec>/runs/")
+    replay_cmd.add_argument("seq", type=int, help="the turn's seq in llm.jsonl")
+    replay_cmd.add_argument("--model", default=None)
+    _add_log_level(replay_cmd)
+
     args = parser.parse_args(argv)
     try:
         return _run(args)
@@ -123,6 +132,10 @@ def _run(args: argparse.Namespace) -> int:
     if getattr(args, "log_level", None):
         config = config.model_copy(update={"log_level": args.log_level})
 
+    if args.command == "replay":
+        from cadenzra.app.replay import run_replay
+
+        return run_replay(config, SPECS[args.spec], args.spec, args.run, args.seq)
     if args.command == "layers":
         return _run_layers(config, args)
     if args.command == "compose":

@@ -46,6 +46,25 @@ def build_critic(config: RunConfig, runlog: RunLog | None = None) -> GeminiCriti
     )
 
 
+def build_client_for_tool(
+    config: RunConfig, tool: str, runlog: RunLog | None = None
+) -> GeminiClient:
+    """The client one capability's calls go through.
+
+    Today every tool rides the generation model; this is the seam where the
+    per-capability model knobs attach, and what replay uses so a replayed turn
+    is wired exactly like a live one.
+    """
+    del tool  # every capability rides the generation model, for now
+    return GeminiClient(
+        api_key=config.require_gemini_key(),
+        model=config.generation_model,
+        attempts=config.llm_attempts,
+        runlog=runlog,
+        include_thoughts=config.log_thoughts and runlog is not None,
+    )
+
+
 def build_renderer(config: RunConfig, runlog: RunLog | None = None) -> LilypondAdapter:
     return LilypondAdapter(config.lilypond_path, runlog=runlog)
 
