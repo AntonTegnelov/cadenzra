@@ -42,7 +42,7 @@ from cadenzra.model.state import PipelineState, attempt_key
 from cadenzra.model.structure import SectionPlan, StructurePlan
 from cadenzra.model.style import StylePack
 from cadenzra.notation.scaffold import scaffold_fragment
-from cadenzra.verification.harmony import validate_harmony
+from cadenzra.verification.harmony import check_entries_against_grid, validate_harmony
 from cadenzra.verification.lyrics import validate_lyric_plan
 from cadenzra.verification.midi_analysis import NoteEvent, extract_voice_notes
 from cadenzra.verification.motifs import validate_motifs
@@ -205,6 +205,9 @@ def generate_harmony(state: PipelineState, services: LayerServices) -> PipelineS
     skeletons: dict[SectionId, HarmonicSkeleton] = {}
     previous_section: SectionPlan | None = None
     previous_skeleton: HarmonicSkeleton | None = None
+    # Compiled once for the whole layer: the grid is checked against the
+    # subjects it will have to harmonize, at the layer that can still move.
+    motif_notes = analyzed_motifs(state, services.renderer, services.workdir)
 
     for section in plan.sections:
         _log.info("writing harmony for section %s", section.section_id)
@@ -215,6 +218,7 @@ def generate_harmony(state: PipelineState, services: LayerServices) -> PipelineS
             style,
             previous_section=previous_section,
             previous_skeleton=previous_skeleton,
+            motif_notes=motif_notes,
         )
         skeletons[section.section_id] = skeleton
         previous_section, previous_skeleton = section, skeleton
@@ -230,6 +234,7 @@ def _harmony_for(
     *,
     previous_section: SectionPlan | None,
     previous_skeleton: HarmonicSkeleton | None,
+    motif_notes: dict[MotifId, list[NoteEvent]] | None = None,
 ) -> HarmonicSkeleton:
     """One section's skeleton, to convergence.
 
@@ -251,9 +256,17 @@ def _harmony_for(
             )
         )
 
+    def validate(candidate: HarmonicSkeleton) -> list[FeedbackItem]:
+        return [
+            *validate_harmony(candidate, section),
+            *check_entries_against_grid(
+                candidate, section, motif_notes or {}, style.dissonance_policy
+            ),
+        ]
+
     return _converge(
         generate,
-        lambda candidate: validate_harmony(candidate, section),
+        validate,
         budget=services.budgets.harmony,
         loop_key=attempt_key("harmony", section.section_id, None),
         what=f"the harmony for section {section.section_id}",

@@ -630,6 +630,7 @@ def assemble_and_verify(
         feedback = _verify_assembled(state, services)
         if not feedback:
             return state
+        _raise_if_unfixable(feedback, services)
 
         targets = _targets_of(feedback)
         _log.warning(
@@ -662,6 +663,36 @@ def assemble_and_verify(
         + "; ".join(item.message for item in feedback),
         loop_key=attempt_key("section", None, None),
         attempts=services.budgets.section,
+    )
+
+
+def _raise_if_unfixable(
+    feedback: list[FeedbackItem], services: ComposeServices
+) -> None:
+    """A plan-level contradiction ends the run now, not after the budget.
+
+    An item routed "unfixable" names only prescribed material on every side —
+    the double-fugue's immortal D#4 spent three full repair sweeps on exactly
+    this shape. `_targets_of` drops voiceless items by design, so without this
+    check the contradiction would burn the budget silently. The plan-time
+    grid check makes these rare; this is the loud path for the ones it cannot
+    predict.
+    """
+    unfixable = [item for item in feedback if item.routing == "unfixable"]
+    if not unfixable:
+        return
+    detail = "; ".join(item.message for item in unfixable)
+    if services.runlog is not None:
+        services.runlog.note(
+            "A plan-level contradiction",
+            "No voice named by these violations is free to move — the plan "
+            f"prescribes every side of them:\n{detail}",
+        )
+    raise BudgetExhaustedError(
+        "the score has violations no voice is free to fix — the plan "
+        f"prescribes every side of them: {detail}",
+        loop_key=attempt_key("section", None, None),
+        attempts=0,
     )
 
 

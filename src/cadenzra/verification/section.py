@@ -46,7 +46,7 @@ _OCTAVE: Final = 12
 # A non-chord tone is unremarkable in passing and conspicuous when held. The
 # checker flags only *sustained* unexplained clashes (docs/05); this is the
 # line between the two, as a share of the harmonic event it sits in.
-_SUSTAINED_SHARE: Final = Fraction(1, 2)
+SUSTAINED_SHARE: Final = Fraction(1, 2)
 
 # Upper extensions above the root: ninths, elevenths and thirteenths, altered
 # and unaltered. A held A over a G minor chord is a ninth, not a wrong note.
@@ -269,7 +269,7 @@ def _simultaneous_pairs(
     return pairs
 
 
-def _permitted_pitch_classes(chord: ParsedChord, strict: bool) -> frozenset[int]:
+def permitted_pitch_classes(chord: ParsedChord, strict: bool) -> frozenset[int]:
     """What the harmony explains: its own tones, plus upper extensions.
 
     Extensions are admitted by default because a ninth over a minor triad is
@@ -287,7 +287,7 @@ def _permitted_pitch_classes(chord: ParsedChord, strict: bool) -> frozenset[int]
     }
 
 
-def _is_strict(policy: str) -> bool:
+def is_strict(policy: str) -> bool:
     lowered = policy.lower()
     return any(marker in lowered for marker in _STRICT_MARKERS)
 
@@ -305,7 +305,7 @@ def _check_harmonic_alignment(
     *and* are held, which is the decidable part of "does the music realize this
     harmony" (docs/05).
     """
-    strict = _is_strict(dissonance_policy)
+    strict = is_strict(dissonance_policy)
     spans = spans or {}
     feedback = []
     for event in skeleton.events:
@@ -326,8 +326,8 @@ def _check_harmonic_alignment(
             )
             continue
 
-        threshold = event.duration * _SUSTAINED_SHARE
-        permitted = _permitted_pitch_classes(chord, strict)
+        threshold = event.duration * SUSTAINED_SHARE
+        permitted = permitted_pitch_classes(chord, strict)
         for voice_id, notes in sorted(voices.items()):
             for note in notes_sounding_at(notes, event.offset):
                 pitch = Pitch.from_midi_number(

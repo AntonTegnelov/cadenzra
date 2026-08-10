@@ -12,9 +12,23 @@ from typing import Final
 
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
-from cadenzra.model.primitives.time import format_bar_beat, section_length
+from cadenzra.model.primitives.ids import MotifId
+from cadenzra.model.primitives.pitch import Pitch
+from cadenzra.model.primitives.time import format_bar_beat, offset_of, section_length
 from cadenzra.model.structure import SectionPlan
 from cadenzra.notation.chords import ChordSymbolError, parse_chord_symbol
+from cadenzra.notation.keys import prefer_flats
+from cadenzra.verification.midi_analysis import NoteEvent
+from cadenzra.verification.section import (
+    SUSTAINED_SHARE,
+    is_strict,
+    permitted_pitch_classes,
+)
+from cadenzra.verification.transposition import (
+    UnknownRelationError,
+    parse_relation,
+    transpose_semitones,
+)
 
 SOURCE: Final = "validate_harmony"
 
@@ -134,12 +148,97 @@ def _check_symbols(
     return feedback
 
 
+def check_entries_against_grid(
+    skeleton: HarmonicSkeleton,
+    section: SectionPlan,
+    motif_notes: dict[MotifId, list[NoteEvent]],
+    dissonance_policy: str = "",
+) -> list[FeedbackItem]:
+    """The plan's own consistency: every declared entry against the grid.
+
+    A subject prescribed at a bar cannot change; a grid clashing with it there
+    is a contradiction only the grid can resolve — detected downstream, it is
+    an unfixable voice-level violation that once survived three repair sweeps
+    (the double-fugue's immortal D#4). Deterministic, no LLM: predict each
+    deterministic entry's sounding pitches and apply exactly the held-tone
+    test the section check applies, so a pass here guarantees no unfixable
+    held-tone there. Tonal answers are skipped — predicting the adjusted
+    degree would be a guess, and the realized-entry check still covers them.
+    """
+    strict = is_strict(dissonance_policy)
+    feedback = []
+    for entry in section.material:
+        subject = motif_notes.get(entry.motif_id)
+        if not subject:
+            continue
+        try:
+            relation = parse_relation(entry.relation)
+        except UnknownRelationError:
+            continue  # the structure validator owns unknown relations
+        predicted = _predicted_entry(subject, relation.kind, relation.semitones)
+        if predicted is None:
+            continue
+        start = offset_of(entry.bar, 1, section.meter)
+        shift = start - subject[0].onset
+        for note in predicted:
+            onset = note.onset + shift
+            for event in skeleton.events:
+                if not (event.offset < onset + note.duration and onset < event.end):
+                    continue
+                try:
+                    chord = parse_chord_symbol(event.chord)
+                except ChordSymbolError:
+                    continue  # _check_symbols owns unreadable chords
+                pitch = Pitch.from_midi_number(
+                    note.midi_pitch, prefer_flats=prefer_flats(section.key)
+                )
+                if pitch.pc12 in permitted_pitch_classes(chord, strict):
+                    continue
+                sounding = min(onset + note.duration, event.end) - max(onset, event.offset)
+                if sounding < event.duration * SUSTAINED_SHARE:
+                    continue
+                feedback.append(
+                    _item(
+                        section,
+                        location=onset,
+                        kind="entry_vs_grid",
+                        message=(
+                            f"the {entry.voice_id} entry at bar {entry.bar} holds "
+                            f"{pitch.to_scientific()} ({pitch.to_lilypond()}) through "
+                            f"{format_bar_beat(event.offset, section.meter)}, where the "
+                            f"grid declares {event.chord}; choose a chord there that "
+                            f"contains {pitch.to_scientific()} — the subject cannot "
+                            "change"
+                        ),
+                    )
+                )
+    return feedback
+
+
+def _predicted_entry(
+    subject: list[NoteEvent], kind: str, semitones: int
+) -> list[NoteEvent] | None:
+    """The entry's sounding notes, or None where prediction would guess."""
+    if kind == "exact":
+        return subject
+    if kind == "transposition":
+        return transpose_semitones(subject, semitones)
+    if kind == "inversion":
+        first = subject[0].midi_pitch
+        return [
+            note.model_copy(update={"midi_pitch": 2 * first - note.midi_pitch})
+            for note in subject
+        ]
+    return None  # tonal answer
+
+
 def _item(
     section: SectionPlan,
     *,
     message: str,
     location: Fraction | None = None,
     evidence: str | None = None,
+    kind: str | None = None,
 ) -> FeedbackItem:
     return FeedbackItem(
         source=SOURCE,
@@ -148,4 +247,5 @@ def _item(
         location=location,
         message=message,
         evidence=evidence,
+        kind=kind,
     )
