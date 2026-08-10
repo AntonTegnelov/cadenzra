@@ -21,7 +21,7 @@ each diagnosed from a log rather than guessed at.
 | `smoke` | the lyric layer end to end | **completed** |
 | `longform` | ten minutes, one argument | 194 bars, 25 parts, then a motif entry |
 | `double-fugue` | two subjects, stretto | the counterpoint plateau, below |
-| `orchestra` | twelve voices, register balance | still running at time of writing |
+| `orchestra` | twelve voices, register balance | 48 parts, then one last clash — see below |
 
 ---
 
@@ -157,6 +157,19 @@ are the most useful thing in this review: **239 parallel-octave violations, then
 48, then 48 again.** An exact plateau is not a hard problem, it is a blind one —
 diagnosed and fixed below.
 
+**Ascent** is the clearest evidence that the repair fix works. Re-run after it,
+its cross-voice attempts went **9 harmonic clashes → 0 → 1**, with **zero
+parallels in all three**, across 48 parts and twelve voices. It failed on a
+single remaining clash with a budget of three; one more attempt would very
+likely have cleared it. Compare the pre-fix double fugue: 239 → 48 → 48.
+
+Its harmony sits in the Eb-minor/Cb region — `Cb`, `Gb`, `Abm`, `Cb7`, `Ebm/Gb`
+— and every surviving complaint is a voice writing a natural or a sharp against
+a remote flat-spelled chord. The clashes are real in pitch-class terms, not
+spelling artifacts, but the *pattern* is: extreme flat harmony pulls voices
+toward enharmonic spellings the chord does not contain. Worth measuring against
+a piece in a plainer key before concluding anything.
+
 **The Long Field** reached **194 bars and 25 parts across five movements**
 before failing on motif-entry fidelity: the viola's declared P5-up entry departs
 from the subject at bar 5, beat 4. Notably it recorded **zero parallels in all
@@ -230,6 +243,18 @@ a harmonic sequence counts as an additive process.
 
 Every failure the system *can* catch, it caught. Every weakness above needed a
 reader.
+
+## What is still open
+
+**Chrome Teeth**, the metal/K-pop fusion, never got past its motif layer. With
+the remainder now quoted it is told exactly what is wrong — "bar 1 is off by
+7/8" — and still writes a bar that does not fill. Three attempts, three
+failures, on a four-bar pop hook in 4/4. That is the one place in this review
+where precise feedback demonstrably did not help, and it has no diagnosis yet.
+
+The `double-fugue` and `kpop` re-runs ended on an exhausted API spending cap
+rather than a musical failure, so the sibling fix is unmeasured on the piece
+that motivated it. `Ascent` above is the evidence that exists.
 
 ## The pattern worth measuring next
 
