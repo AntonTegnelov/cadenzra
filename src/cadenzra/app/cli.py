@@ -10,7 +10,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from cadenzra.app.compose import build_compose_services, compose
+from cadenzra.app.compose import build_compose_services, compose, load_resume_state
 from cadenzra.app.config import RunConfig
 from cadenzra.app.factory import build_generator, build_renderer, open_run_log
 from cadenzra.app.harness import (
@@ -90,6 +90,11 @@ def main(argv: list[str] | None = None) -> int:
     compose_cmd.add_argument("--out", type=Path, default=None)
     compose_cmd.add_argument(
         "--no-critique", action="store_true", help="skip the audio listening pass"
+    )
+    compose_cmd.add_argument(
+        "--resume",
+        action="store_true",
+        help="pick up from the last run's state.json instead of starting over",
     )
     _add_log_level(compose_cmd)
 
@@ -223,12 +228,13 @@ def _run_compose(config: RunConfig, args: argparse.Namespace) -> int:
     """Compose one piece and report where its artifacts landed."""
     spec = SPECS[args.spec]
     out = args.out or config.output_dir / args.spec
+    initial = load_resume_state(out, spec) if args.resume else None
     services = build_compose_services(
         config, out, with_critic=not args.no_critique, spec_name=args.spec
     )
 
     try:
-        state = compose(spec, services)
+        state = compose(spec, services, initial=initial)
     except CadenzraError as error:
         print(f"cadenzra: {error}", file=sys.stderr)
         print(f"cadenzra: partial artifacts written to {out}", file=sys.stderr)

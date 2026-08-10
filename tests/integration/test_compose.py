@@ -404,3 +404,36 @@ def test_a_complaint_only_a_human_can_settle_is_recorded_not_acted_on(
     assert state.artifacts is not None, "the run still finished"
     assert [item.level for item in state.feedback] == ["structure"]
     assert generator.calls == len(FRAGMENTS)
+
+
+def test_a_resumed_run_rebuilds_the_artifacts_without_regenerating(
+    composed: tuple[PipelineState, Path], tmp_path: Path
+) -> None:
+    """The audit's largest sink: 79.5% of spend re-derived state a previous
+    run had already written. A resume must reach the artifacts with zero
+    generation calls when every slice is present."""
+    from cadenzra.app.compose import load_resume_state
+
+    _, out = composed
+
+    class _Untouchable:
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"generator.{name} was called on a full resume")
+
+    initial = load_resume_state(out, SPEC)
+    runlog = RunLog(tmp_path / "runs" / "resume")
+    services = ComposeServices(
+        generator=_Untouchable(),  # type: ignore[arg-type]
+        renderer=LilypondAdapter(runlog=runlog),
+        workdir=tmp_path / "work",
+        budgets=RetryBudgets(),
+        runlog=runlog,
+        synthesizer=FluidsynthAdapter(),
+        output_dir=tmp_path,
+    )
+
+    state = compose(SPEC, services, initial=initial)
+
+    assert state.artifacts is not None
+    assert state.score is not None
+    assert (tmp_path / "state.json").exists()

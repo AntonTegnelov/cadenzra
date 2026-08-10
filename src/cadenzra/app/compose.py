@@ -88,9 +88,41 @@ class ComposeServices(LayerServices):
     spec_name: str | None = None
 
 
-def compose(spec: PieceSpec, services: ComposeServices) -> PipelineState:
-    """Run the whole pipeline. Raises `CadenzraError` on an exhausted budget."""
-    state = PipelineState(spec=spec)
+def load_resume_state(output_dir: Path, spec: PieceSpec) -> PipelineState:
+    """The previous run's state, ready to resume — or a loud refusal.
+
+    Downstream residue (assembly, score, artifacts, feedback) is cleared:
+    those stages always re-run, and stale copies of them would misdescribe the
+    music the resumed run is about to produce.
+    """
+    path = output_dir / "state.json"
+    if not path.exists():
+        raise CadenzraError(
+            f"nothing to resume: {path} does not exist — run without --resume first"
+        )
+    state = PipelineState.model_validate_json(path.read_text(encoding="utf-8"))
+    if state.spec != spec:
+        raise CadenzraError(
+            "the saved state was produced by a different spec than the one "
+            "requested; delete the state or run without --resume"
+        )
+    return state.model_copy(
+        update={"sections": {}, "score": None, "artifacts": None, "feedback": []}
+    )
+
+
+def compose(
+    spec: PieceSpec,
+    services: ComposeServices,
+    *,
+    initial: PipelineState | None = None,
+) -> PipelineState:
+    """Run the whole pipeline. Raises `CadenzraError` on an exhausted budget.
+
+    `initial` resumes from a previous run's state: every layer skips the
+    slices already present and regenerates only what is missing.
+    """
+    state = initial if initial is not None else PipelineState(spec=spec)
     try:
         state = derive_style(state, services)
         state = plan_structure(state, services)
@@ -162,7 +194,14 @@ def generate_voices(state: PipelineState, services: ComposeServices) -> Pipeline
     assert plan is not None
 
     for section in plan.sections:
-        voice_ids = _voices_in(section, state.spec)
+        voice_ids = [
+            voice_id
+            for voice_id in _voices_in(section, state.spec)
+            if voice_key(section.section_id, voice_id) not in state.voices
+        ]
+        if not voice_ids:
+            # Everything here was written by the run being resumed.
+            continue
         _log.info(
             "writing %d voices for section %s", len(voice_ids), section.section_id
         )
@@ -327,6 +366,10 @@ def generate_lyrics(
 
     for section in plan.sections:
         if only is not None and section.section_id not in only:
+            continue
+        if only is None and section.section_id in written:
+            # A resumed run's earlier sections keep their words; `only` is the
+            # explicit request to rewrite them after their music changed.
             continue
         directive = directives.get(section.section_id)
         voice_ids = _singing_voices_in(section, state.spec)

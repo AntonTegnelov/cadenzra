@@ -63,7 +63,14 @@ def derive_style(state: PipelineState, services: LayerServices) -> PipelineState
     the piece allows 3/4 — ended a twelve-voice run before it had written a
     note. The parser's complaint is a perfectly good instruction to the next
     attempt.
+
+    A present slice is not regenerated: that is what lets a resumed run skip
+    the layers a previous run already paid for (the same shape in every layer
+    below).
     """
+    if state.style is not None:
+        _log.info("style pack already present; skipping")
+        return state
     _log.info("deriving the style pack")
 
     def generate(feedback: list[FeedbackItem]) -> StylePack:
@@ -86,6 +93,9 @@ def derive_style(state: PipelineState, services: LayerServices) -> PipelineState
 def plan_structure(state: PipelineState, services: LayerServices) -> PipelineState:
     """Plan the form, then check it with arithmetic (docs/04)."""
     style = _require_style(state)
+    if state.structure is not None:
+        _log.info("form already planned; skipping")
+        return state
     _log.info("planning the form")
 
     def generate(feedback: list[FeedbackItem]) -> StructurePlan:
@@ -110,7 +120,7 @@ def plan_lyrics(state: PipelineState, services: LayerServices) -> PipelineState:
     of the device vocabulary.
     """
     style, plan = _require_style(state), _require_plan(state)
-    if not state.spec.has_lyrics:
+    if not state.spec.has_lyrics or state.lyric_plan is not None:
         return state
 
     _log.info("planning the words")
@@ -138,6 +148,9 @@ def generate_motifs(state: PipelineState, services: LayerServices) -> PipelineSt
     style, plan = _require_style(state), _require_plan(state)
     if not plan.declares_materials:
         _log.info("no material declared; skipping the motif layer")
+        return state
+    if state.motifs is not None:
+        _log.info("motifs already written; skipping")
         return state
 
     _log.info("writing %d motifs", len(plan.materials_needed))
@@ -177,6 +190,9 @@ def generate_harmony(state: PipelineState, services: LayerServices) -> PipelineS
     sliding-window context (docs/04).
     """
     style, plan = _require_style(state), _require_plan(state)
+    if state.harmony:
+        _log.info("harmony already written; skipping")
+        return state
 
     skeletons: dict[SectionId, HarmonicSkeleton] = {}
     previous_section: SectionPlan | None = None
