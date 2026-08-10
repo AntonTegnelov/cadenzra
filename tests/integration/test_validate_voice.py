@@ -131,6 +131,25 @@ def test_a_note_below_the_floor_is_rejected_by_name(
     assert any("below" in item.message and "G3" in item.message for item in feedback)
 
 
+def test_a_bar_of_out_of_range_notes_is_one_rehearsal_note(
+    renderer: LilypondAdapter, tmp_path: Path
+) -> None:
+    """A live lite-tier run wrote stratospheric figuration and drew ~80 items,
+    one per note, flooding the regeneration prompt — the audit's violation
+    inflation, solo edition. A bar of wrong notes is one rehearsal note that
+    names the extent, because the prompt is the message's real consumer."""
+    music = "a'8 a' b' b' c''4. |\ne''8 f'' g'' a'' b''4. |"
+
+    feedback = _check(music, renderer, tmp_path)
+
+    assert len(feedback) == 1
+    (item,) = feedback
+    assert "bar 2" in item.message
+    assert "5 notes" in item.message
+    assert "B5" in item.message, "the farthest offender is named"
+    assert "C5" in item.message, "so is the limit"
+
+
 def test_a_fragment_carrying_structural_commands_is_rejected(
     renderer: LilypondAdapter, tmp_path: Path
 ) -> None:

@@ -211,8 +211,14 @@ def overflow_of(message: str) -> str | None:
 def _check_range(
     part: VoicePart, voice_spec: VoiceSpec, section: SectionPlan, midi_path: Path
 ) -> list[FeedbackItem]:
-    """Every note inside the voice's range — a hard constraint (docs/03)."""
-    feedback = []
+    """Every note inside the voice's range — a hard constraint (docs/03).
+
+    One item per (bar, side): a bar of stratospheric figuration is one
+    rehearsal note naming its extent, not one complaint per note. The
+    regeneration prompt is the message's real consumer (docs/05), and a
+    flood of eighty identical items teaches it nothing a summary would not.
+    """
+    offenders: dict[tuple[int, bool], list[Pitch]] = {}
     for notes in extract_voice_notes(mido.MidiFile(midi_path)).values():
         for note in notes:
             pitch = Pitch.from_midi_number(
@@ -222,19 +228,28 @@ def _check_range(
                 continue
             bar = bar_containing(note.onset, section.meter)
             above = pitch.cents > voice_spec.range_high.cents
-            limit = voice_spec.range_high if above else voice_spec.range_low
-            feedback.append(
-                _item(
-                    part,
-                    section,
-                    bar=bar,
-                    message=(
-                        f"{pitch.to_scientific()} ({pitch.to_lilypond()}) in bar {bar} "
-                        f"is {'above' if above else 'below'} the {part.voice_id} "
-                        f"{'ceiling' if above else 'floor'} of {limit.to_scientific()}"
-                    ),
-                )
+            offenders.setdefault((bar, above), []).append(pitch)
+
+    feedback = []
+    for (bar, above), pitches in sorted(offenders.items()):
+        limit = voice_spec.range_high if above else voice_spec.range_low
+        side = f"the {part.voice_id} {'ceiling' if above else 'floor'} of "
+        side += limit.to_scientific()
+        if len(pitches) == 1:
+            pitch = pitches[0]
+            message = (
+                f"{pitch.to_scientific()} ({pitch.to_lilypond()}) in bar {bar} "
+                f"is {'above' if above else 'below'} {side}"
             )
+        else:
+            extreme = max(pitches, key=lambda p: p.cents if above else -p.cents)
+            message = (
+                f"bar {bar} has {len(pitches)} notes "
+                f"{'above' if above else 'below'} {side}, "
+                f"the {'highest' if above else 'lowest'} "
+                f"{extreme.to_scientific()} ({extreme.to_lilypond()})"
+            )
+        feedback.append(_item(part, section, bar=bar, message=message))
     return feedback
 
 
