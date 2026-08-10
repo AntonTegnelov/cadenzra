@@ -31,6 +31,7 @@ from cadenzra.app.pipeline import (
     plan_lyrics,
     plan_structure,
 )
+from cadenzra.app.summary import write_run_summary
 from cadenzra.common.errors import (
     BudgetExhaustedError,
     CadenzraError,
@@ -82,6 +83,9 @@ class ComposeServices(LayerServices):
     # it simply skips the listening pass.
     critic: AudioCritic | None = None
     router: FeedbackRouter | None = None
+    # Provenance for the run summary; None (tests, harness) skips the summary.
+    run_config: RunConfig | None = None
+    spec_name: str | None = None
 
 
 def compose(spec: PieceSpec, services: ComposeServices) -> PipelineState:
@@ -101,10 +105,50 @@ def compose(spec: PieceSpec, services: ComposeServices) -> PipelineState:
     except CadenzraError as error:
         if services.runlog is not None:
             services.runlog.note("The run failed", str(error))
-        _write_partials(state, services.output_dir)
+        _write_partials(state, services.output_dir, run_dir=_run_dir_of(services))
+        _summarize(services, spec, error=error)
         raise
-    _write_partials(state, services.output_dir)
+    _write_partials(state, services.output_dir, run_dir=_run_dir_of(services))
+    _summarize(services, spec, error=None)
     return state
+
+
+def _run_dir_of(services: ComposeServices) -> Path | None:
+    return services.runlog.dir if services.runlog is not None else None
+
+
+def _summarize(
+    services: ComposeServices, spec: PieceSpec, *, error: CadenzraError | None
+) -> None:
+    """Write the run summary and its index line, on success and on failure.
+
+    Wired only when the factory filled in the provenance fields — a
+    hand-assembled `ComposeServices` in a test keeps its old behavior.
+    """
+    if (
+        services.runlog is None
+        or services.run_config is None
+        or services.spec_name is None
+    ):
+        return
+    failure: dict[str, object] | None
+    if error is None:
+        status, failure = "completed", None
+    elif isinstance(error, BudgetExhaustedError):
+        status = "budget_exhausted"
+        failure = {"loop_key": error.loop_key, "message": str(error)}
+    else:
+        status, failure = "failed", {"loop_key": None, "message": str(error)}
+    write_run_summary(
+        state=None,
+        config=services.run_config,
+        spec=spec,
+        spec_name=services.spec_name,
+        status=status,
+        failure=failure,
+        run_dir=services.runlog.dir,
+        index_path=services.run_config.output_dir / "index.jsonl",
+    )
 
 
 def generate_voices(state: PipelineState, services: ComposeServices) -> PipelineState:
@@ -936,17 +980,23 @@ def _motif_meter(state: PipelineState, motif_id: MotifId) -> MeterSpec:
     return state.spec.meters_allowed[0]
 
 
-def _write_partials(state: PipelineState, output_dir: Path) -> None:
+def _write_partials(
+    state: PipelineState, output_dir: Path, *, run_dir: Path | None = None
+) -> None:
     """Everything produced so far, whether the run succeeded or failed.
 
     A complete record for debugging generation quality after the fact
     (docs/07), and the thing that makes a loud failure actionable rather than
-    merely loud.
+    merely loud. The run dir gets its own copy of the state: the spec-level
+    one is clobbered by every re-run, which is how the double-fugue autopsy
+    lost the structure plan it needed.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "state.json").write_text(
-        state.model_dump_json(indent=2), encoding="utf-8"
-    )
+    state_json = state.model_dump_json(indent=2)
+    (output_dir / "state.json").write_text(state_json, encoding="utf-8")
+    if run_dir is not None:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "state.json").write_text(state_json, encoding="utf-8")
     if state.score is not None:
         (output_dir / "score.ly").write_text(state.score.lily_source, encoding="utf-8")
     if state.feedback:
@@ -957,7 +1007,11 @@ def _write_partials(state: PipelineState, output_dir: Path) -> None:
 
 
 def build_compose_services(
-    config: RunConfig, output_dir: Path, *, with_critic: bool = True
+    config: RunConfig,
+    output_dir: Path,
+    *,
+    with_critic: bool = True,
+    spec_name: str | None = None,
 ) -> ComposeServices:
     """Wire a full run. The single composition point stays `app/factory.py`."""
     from cadenzra.app.factory import (
@@ -982,4 +1036,6 @@ def build_compose_services(
         output_dir=output_dir,
         critic=critic,
         router=critic,
+        run_config=config,
+        spec_name=spec_name or output_dir.name,
     )

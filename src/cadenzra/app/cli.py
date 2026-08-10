@@ -224,7 +224,7 @@ def _run_compose(config: RunConfig, args: argparse.Namespace) -> int:
     spec = SPECS[args.spec]
     out = args.out or config.output_dir / args.spec
     services = build_compose_services(
-        config, out, with_critic=not args.no_critique
+        config, out, with_critic=not args.no_critique, spec_name=args.spec
     )
 
     try:

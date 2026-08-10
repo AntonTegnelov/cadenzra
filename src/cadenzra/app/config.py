@@ -8,7 +8,7 @@ reads the environment (docs/06).
 from pathlib import Path
 from typing import Final
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cadenzra.rendering.fluidsynth import DEFAULT_SOUNDFONT
@@ -18,6 +18,31 @@ from cadenzra.rendering.fluidsynth import DEFAULT_SOUNDFONT
 # client plus a service plus one line in the factory (docs/06).
 DEFAULT_GENERATION_MODEL: Final = "gemini-3.6-flash"
 DEFAULT_CRITIC_MODEL: Final = "gemini-3.6-flash"
+
+
+class ModelPrice(BaseModel, frozen=True):
+    """Per-million-token rates for one model, for the run summary's dollars.
+
+    `thinking_per_mtok` defaults to the output rate, which is how Gemini bills
+    reasoning. The table ships empty: an unpriced model yields `dollars: null`
+    in the summary rather than an invented figure.
+    """
+
+    input_per_mtok: float
+    output_per_mtok: float
+    thinking_per_mtok: float | None = None
+
+    def dollars(self, *, input_tokens: int, answer_tokens: int, thinking_tokens: int) -> float:
+        thinking_rate = (
+            self.thinking_per_mtok
+            if self.thinking_per_mtok is not None
+            else self.output_per_mtok
+        )
+        return (
+            input_tokens * self.input_per_mtok
+            + answer_tokens * self.output_per_mtok
+            + thinking_tokens * thinking_rate
+        ) / 1_000_000
 
 
 class RetryBudgets(BaseSettings):
@@ -62,6 +87,10 @@ class RunConfig(BaseSettings):
 
     output_dir: Path = Path("out")
     budgets: RetryBudgets = Field(default_factory=RetryBudgets)
+
+    # Per-model price table for the run summary. Empty by default — dollars
+    # are computed only for models actually priced here.
+    prices: dict[str, ModelPrice] = Field(default_factory=dict)
 
     # Bounded retries for transport and malformed output — LLM calls are
     # non-deterministic and warrant them, unlike deterministic subprocesses.
