@@ -87,7 +87,28 @@ def build_voice_prompt(ctx: VoiceContext) -> str:
     if ctx.is_regeneration:
         blocks.append(_rehearsal_notes(ctx))
 
+    if ctx.siblings:
+        blocks.append(_siblings_block(ctx))
+
     return "\n\n".join(blocks)
+
+
+def _siblings_block(ctx: VoiceContext) -> str:
+    """The other voices, when the problem is between this line and theirs.
+
+    Shown only on a cross-voice repair. A part told "you move in parallel
+    octaves with the viola" and not shown the viola is being asked to fix a
+    relationship it cannot see — and it rewrites blind, which is how a repair
+    loop trades one parallel for another and stalls.
+    """
+    lines = "\n".join(
+        f"  {voice_id}:\n    " + music.replace("\n", "\n    ")
+        for voice_id, music in ctx.siblings.items()
+    )
+    return (
+        "The other voices in this section, which yours has to fit against — "
+        "these are fixed, so yours is the line that moves:\n" + lines
+    )
 
 
 def _contract_for(ctx: VoiceContext) -> str:

@@ -227,3 +227,84 @@ def test_a_malformed_artifact_is_a_rejection_not_the_end_of_the_run() -> None:
     assert result == "a good plan"
     # The parser's own words reached the retry, rather than a paraphrase.
     assert "bar 0" in seen[1][0]
+
+
+def test_repaired_voices_see_each_other_not_a_stale_snapshot() -> None:
+    """Rewriting every named voice against the same snapshot means each avoids
+    the others' *old* music, and the new pair can be exactly as parallel.
+    Measured on a double fugue, a repair loop went 239 violations, then 48,
+    then 48 again, and gave up."""
+    from pathlib import Path
+
+    from cadenzra.app.compose import ComposeServices, _rewrite_voices
+    from cadenzra.app.config import RetryBudgets
+    from cadenzra.model.state import PipelineState, voice_key
+    from cadenzra.model.style import StylePack
+    from cadenzra.model.voice import VoicePart
+
+    seen: list[dict[str, str]] = []
+
+    class _Recorder:
+        """Writes a new line, and records what siblings it was shown."""
+
+        def generate_voice(self, ctx: object) -> VoicePart:
+            seen.append(dict(ctx.siblings))  # type: ignore[attr-defined]
+            voice_id = ctx.voice.voice_id  # type: ignore[attr-defined]
+            # Valid music, so the per-voice validator passes and the test is
+            # about what the repair *saw*, not about notation.
+            return VoicePart(
+                section_id=ctx.section.section_id,  # type: ignore[attr-defined]
+                voice_id=voice_id,
+                lily_music=f"NEW {GOOD}" if voice_id == "soprano" else GOOD,
+            )
+
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"unexpected call to {name}")
+
+    soprano = ALTO.model_copy(update={"voice_id": "soprano"})
+    section = SECTION.model_copy(update={"active_voices": ["soprano", "alto"]})
+    state = PipelineState(
+        spec=PieceSpec(
+            title="T",
+            style_prompt="s",
+            voices=[soprano, ALTO],
+            meters_allowed=[SEVEN_EIGHT],
+            target_minutes=1.0,
+        ),
+        style=StylePack(),
+        structure=StructurePlan(sections=[section]),
+        voices={
+            voice_key("A", "soprano"): VoicePart(
+                section_id="A", voice_id="soprano", lily_music="OLD-soprano"
+            ),
+            voice_key("A", "alto"): VoicePart(
+                section_id="A", voice_id="alto", lily_music="OLD-alto"
+            ),
+        },
+    )
+    services = ComposeServices(
+        generator=_Recorder(),  # type: ignore[arg-type]
+        renderer=RecordingRenderer([clean()]),
+        workdir=Path("/tmp/unused"),
+        budgets=RetryBudgets(),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=Path("/tmp/unused"),
+    )
+    note_s = FeedbackItem(
+        source="validate_section", level="section", section_id="A",
+        voice_id="soprano", message="parallel octaves with alto",
+    )
+    note_a = note_s.model_copy(update={"voice_id": "alto"})
+
+    _rewrite_voices(
+        state,
+        services,
+        [note_s, note_a],
+        {("A", "soprano"): [note_s], ("A", "alto"): [note_a]},
+    )
+
+    assert len(seen) == 2
+    # The first repair sees the other voice as it stands; the second sees the
+    # first one's *new* line, which is the whole point.
+    assert seen[0] == {"alto": "OLD-alto"}
+    assert seen[1] == {"soprano": f"NEW {GOOD}"}

@@ -429,3 +429,15 @@ def test_a_bad_style_pack_does_not_end_the_run() -> None:
 
     assert calls["n"] == 2
     assert state.style is not None and state.style.idioms == ["second time lucky"]
+
+
+def test_a_cross_voice_repair_is_shown_the_lines_it_must_fit_against() -> None:
+    """A part told "you move in parallel octaves with the viola" and not shown
+    the viola is being asked to fix a relationship it cannot see."""
+    plain = build_voice_prompt(_ctx())
+    repairing = build_voice_prompt(_ctx(siblings={"viola": "c4 d4 e4 f4 |"}))
+
+    assert "other voices in this section" not in plain
+    assert "c4 d4 e4 f4 |" in repairing
+    assert "viola" in repairing
+    assert "yours is the line that moves" in repairing

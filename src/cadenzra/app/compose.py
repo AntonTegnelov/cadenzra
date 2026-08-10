@@ -179,6 +179,7 @@ def _voice_to_convergence(
     voice_id: VoiceId,
     *,
     prior: list[FeedbackItem] | None = None,
+    siblings: dict[VoiceId, str] | None = None,
 ) -> VoicePart:
     """One fragment, regenerated against its feedback until it validates.
 
@@ -201,6 +202,7 @@ def _voice_to_convergence(
             previous_tail=_previous_tail(state, section, voice_id),
             rejected=rejected,
             feedback=feedback,
+            siblings=siblings or {},
         )
         try:
             part = services.generator.generate_voice(ctx)
@@ -601,7 +603,6 @@ def _rewrite_voices(
     assert plan is not None
     sections = plan.sections_by_id
 
-    rewritten = {}
     for (section_id, voice_id), items in targets.items():
         _log.info("rewriting %s in section %s", voice_id, section_id)
         part = _voice_to_convergence(
@@ -610,10 +611,30 @@ def _rewrite_voices(
             sections[section_id],
             voice_id,
             prior=items,
+            siblings=_siblings_of(state, sections[section_id], voice_id),
         )
-        rewritten[voice_key(section_id, voice_id)] = part
+        # Accumulated, not collected: the next voice to be repaired has to see
+        # this one's new line. Rewriting every named voice against the same
+        # stale snapshot means each avoids the others' *old* music, and the new
+        # pair can be exactly as parallel — measured, a repair loop did 239
+        # violations, then 48, then 48 again, and gave up.
+        state = state.model_copy(
+            update={"voices": state.voices | {voice_key(section_id, voice_id): part}}
+        )
 
-    return state.model_copy(update={"voices": state.voices | rewritten})
+    return state
+
+
+def _siblings_of(
+    state: PipelineState, section: SectionPlan, voice_id: VoiceId
+) -> dict[VoiceId, str]:
+    """The other voices' music in this section, for a cross-voice repair."""
+    return {
+        other: state.voices[voice_key(section.section_id, other)].lily_music
+        for other in _voices_in(section, state.spec)
+        if other != voice_id
+        and voice_key(section.section_id, other) in state.voices
+    }
 
 
 def _verify_assembled(

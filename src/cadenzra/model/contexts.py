@@ -82,6 +82,11 @@ class VoiceContext(BaseModel, frozen=True):
     # On a regeneration: the fragment that was rejected, and why.
     rejected: VoicePart | None = None
     feedback: list[FeedbackItem] = Field(default_factory=list)
+    # The other voices' music in this section, shown only when the rejection
+    # is *about* them. First-pass generation stays independent given the
+    # skeleton (docs/04); a cross-voice repair cannot be, because the fault is
+    # a relationship and the fix has to be measured against the other line.
+    siblings: dict[VoiceId, str] = Field(default_factory=dict)
 
     @property
     def is_regeneration(self) -> bool:
