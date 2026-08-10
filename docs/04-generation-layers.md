@@ -58,6 +58,8 @@ This is the workhorse node and the one engineered most heavily around LLM weakne
 
 **Fan-out.** Within a section, voices generate concurrently (independent given the skeleton), except where texture creates ordering dependencies as above. Across sections, generation is sequential per voice so the sliding window is available.
 
+  *Corrected in implementation (2026-08-10).* Concurrency is now conditional on texture: contrapuntal sections (imitative, fugal, canon, polyphonic — matched on the plan's texture text) generate **sequentially in entry order, each voice shown the finished lines before it**. Independence given the skeleton coordinates pitch class but not motion, and the double-fugue's first pass measured ~44 distinct parallel passages between blind voices — a base rate no prompt could lower (`docs/harness-results/cost-deep-dive.md`, Part 1). Homophonic textures keep the concurrent fan-out.
+
 **Words are not written here.** A sung part is told only that it will be sung, and to leave room for a syllable per note. The words themselves come from the two layers below, after the music exists.
 
 ## `plan_lyrics`

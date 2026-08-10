@@ -8,7 +8,7 @@ Lyrics were, until this doc, a single conditional in the voice prompt: *"This pa
 
 Two structural facts made that untenable, both observed in real runs:
 
-**Voices sing past each other.** Voice parts are generated concurrently within a section, each with a `VoiceContext` that contains no other voice's text. Four singers each invent a text independently, and nothing in the system says otherwise — one run produced a piece where one voice sang in Latin while another sang English over the top of it. `PieceSpec.language` existed the whole time and was read by nothing. Coordination is not a quality problem to be prompted away; it is missing by construction.
+**Voices sing past each other.** Voice parts were generated concurrently within a section (homophonic textures still are; contrapuntal ones have since gone sequential — docs/04), each with a `VoiceContext` that contains no other voice's text. Four singers each invent a text independently, and nothing in the system says otherwise — one run produced a piece where one voice sang in Latin while another sang English over the top of it. `PieceSpec.language` existed the whole time and was read by nothing. Coordination is not a quality problem to be prompted away; it is missing by construction.
 
 **"Write the words too" is not a task the music layer can hold.** A voice prompt already carries the meter, the range, the harmony, the motif entries, the dynamics and the fragment contract. Asking the same call to also serve a story, a rhyme scheme and a set of rhetorical devices means one of the two gets the model's attention. And the words that fit a melody can only be written once the melody exists.
 

@@ -228,17 +228,54 @@ def generate_voices(state: PipelineState, services: ComposeServices) -> Pipeline
     return state
 
 
+# Texture words that mean the voices are in conversation. Free text on the
+# plan, matched by substring — a branch on data, not a genre switch (docs/03).
+_CONTRAPUNTAL_MARKERS = ("imitative", "fugal", "fugue", "canon", "contrapuntal", "polyphon")
+
+
+def _is_contrapuntal(texture: str) -> bool:
+    lowered = texture.lower()
+    return any(marker in lowered for marker in _CONTRAPUNTAL_MARKERS)
+
+
 def _write_section_voices(
     state: PipelineState,
     services: ComposeServices,
     section: SectionPlan,
     voice_ids: list[VoiceId],
 ) -> list[VoicePart]:
-    """One section's voices, written concurrently.
+    """One section's voices — concurrent for homophony, sequential for
+    counterpoint.
+
+    Independence given the skeleton is cheap and correct where voices move
+    together; in an imitative texture the *relationships* are the content, and
+    four voices drawing on the same chord tones blind to each other produce
+    parallels at a rate no prompt can prevent (the double-fugue's first pass:
+    ~44 distinct passages). Counterpoint is written the way it always has
+    been — against the lines already on the page, in entry order.
 
     Its own function so `state` and `section` are bound as arguments rather
     than captured by a closure over a loop variable.
     """
+    if _is_contrapuntal(section.texture):
+        parts: list[VoicePart] = []
+        for voice_id in _entry_order(section, voice_ids):
+            part = _voice_to_convergence(
+                state,
+                services,
+                section,
+                voice_id,
+                siblings=_siblings_of(state, section, voice_id),
+            )
+            parts.append(part)
+            state = state.model_copy(
+                update={
+                    "voices": state.voices
+                    | {voice_key(section.section_id, voice_id): part}
+                }
+            )
+        return parts
+
     with ThreadPoolExecutor(max_workers=max(1, len(voice_ids))) as pool:
         return list(
             pool.map(
@@ -248,6 +285,22 @@ def _write_section_voices(
                 voice_ids,
             )
         )
+
+
+def _entry_order(section: SectionPlan, voice_ids: list[VoiceId]) -> list[VoiceId]:
+    """Voices by their first declared entry bar; entryless voices after,
+    keeping spec order — the subject is on the page before its answer."""
+    first_entry = {
+        entry.voice_id: entry.bar
+        for entry in sorted(section.material, key=lambda e: e.bar, reverse=True)
+    }
+    return sorted(
+        voice_ids,
+        key=lambda voice_id: (
+            first_entry.get(voice_id, len(section.material) + section.bars + 1),
+            voice_ids.index(voice_id),
+        ),
+    )
 
 
 def _voices_in(section: SectionPlan, spec: PieceSpec) -> list[VoiceId]:
@@ -898,11 +951,17 @@ def _rewrite_voices(
 def _siblings_of(
     state: PipelineState, section: SectionPlan, voice_id: VoiceId
 ) -> dict[VoiceId, str]:
-    """The other voices' music in this section, for a cross-voice repair."""
+    """The other voices' music in this section, as far as it exists.
+
+    On a cross-voice repair every sibling is present; during sequential
+    contrapuntal generation only the already-written entries are — which is
+    exactly what the next voice should see.
+    """
     return {
         other: state.voices[voice_key(section.section_id, other)].lily_music
         for other in _voices_in(section, state.spec)
         if other != voice_id
+        and voice_key(section.section_id, other) in state.voices
         and voice_key(section.section_id, other) in state.voices
     }
 

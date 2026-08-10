@@ -57,7 +57,7 @@ The pipeline is a LangGraph `StateGraph`. Node taxonomy:
 | **Critic** | `critique_audio` | Multimodal LLM listening to the rendered audio |
 | **Router** | `route_feedback` | Maps validator/critic feedback to the target node |
 
-Edges follow the layer order; every validator has a conditional edge that either advances or loops back with feedback attached to state. `generate_motifs` runs only when the plan declares material entries; otherwise the edge skips it. `generate_voice` fans out per (section, voice) pair — independent given the skeleton, so concurrent.
+Edges follow the layer order; every validator has a conditional edge that either advances or loops back with feedback attached to state. `generate_motifs` runs only when the plan declares material entries; otherwise the edge skips it. `generate_voice` fans out per (section, voice) pair — independent given the skeleton, so concurrent. (*Corrected in implementation:* concurrent for homophonic textures only; contrapuntal sections generate sequentially in entry order with the earlier lines in context — see docs/04.)
 
 ```
 derive_style_pack
@@ -68,7 +68,7 @@ generate_motifs → validate_motifs ⇄ (fail: generate_motifs)     [skipped if 
       ↓ pass
 generate_harmony → validate_harmony ⇄ (fail: generate_harmony)
       ↓ pass
-generate_voice [× section × voice, parallel] → validate_voice ⇄ (fail: generate_voice)
+generate_voice [× section × voice, parallel*] → validate_voice ⇄ (fail: generate_voice)
       ↓ pass
 assemble_section → validate_section ⇄ (fail: generate_voice[targeted])
       ↓ pass
