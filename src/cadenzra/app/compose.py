@@ -716,12 +716,28 @@ def assemble_and_verify(
     Regenerating only those keeps the blast radius small, which is the whole
     reason validation is scoped this way.
     """
+    trajectory: list[int] = []
     for attempt in range(1, services.budgets.section + 1):
         state = assemble(state, services)
         feedback = _verify_assembled(state, services)
         if not feedback:
             return state
         _raise_if_unfixable(feedback, services)
+
+        # A repair sweep that does not shrink the set of distinct faults will
+        # not shrink it next time either — measured: 263 → 63 → 66, with the
+        # third sweep spending thirteen minutes proving what the second had.
+        distinct = len({item.fingerprint() for item in feedback})
+        trajectory.append(distinct)
+        if len(trajectory) >= 2 and distinct >= trajectory[-2]:
+            path = " -> ".join(str(count) for count in trajectory)
+            raise BudgetExhaustedError(
+                f"the cross-voice checks stopped converging: distinct "
+                f"violations went {path}; still failing: "
+                + "; ".join(item.message for item in feedback),
+                loop_key=attempt_key("section", None, None),
+                attempts=attempt,
+            )
 
         targets = _targets_of(feedback)
         _log.warning(
@@ -755,6 +771,43 @@ def assemble_and_verify(
         loop_key=attempt_key("section", None, None),
         attempts=services.budgets.section,
     )
+
+
+# The most complaints one repair prompt carries. The double-fugue handed a
+# voice 45 at once; a voice asked to fix 45 relationships fixes none of them
+# well. Priority is structural: an entry violation outranks a held tone
+# outranks a parallel.
+_MAX_COMPLAINTS = 8
+_KIND_PRIORITY = {"entry": 0, "held_tone": 1, "parallels": 2}
+
+
+def _prioritized(items: list[FeedbackItem]) -> list[FeedbackItem]:
+    """At most `_MAX_COMPLAINTS` items, most structural first, rest announced.
+
+    Stable within each class, and honest about the cut: the synthetic tail
+    note says more are waiting so the model does not mistake eight complaints
+    for the whole picture.
+    """
+    if len(items) <= _MAX_COMPLAINTS:
+        return items
+    ranked = sorted(
+        items, key=lambda item: _KIND_PRIORITY.get(item.kind or "", 3)
+    )
+    kept = ranked[:_MAX_COMPLAINTS]
+    dropped = len(items) - len(kept)
+    return [
+        *kept,
+        FeedbackItem(
+            source="router",
+            level=kept[0].level,
+            section_id=kept[0].section_id,
+            voice_id=kept[0].voice_id,
+            message=(
+                f"…and {dropped} more; fix these first — the rest will be "
+                "re-checked after the rewrite"
+            ),
+        ),
+    ]
 
 
 def _raise_if_unfixable(
@@ -827,7 +880,7 @@ def _rewrite_voices(
             services,
             sections[section_id],
             voice_id,
-            prior=items,
+            prior=_prioritized(items),
             siblings=_siblings_of(state, sections[section_id], voice_id),
         )
         # Accumulated, not collected: the next voice to be repaired has to see

@@ -129,3 +129,61 @@ def test_two_prescribed_lines_in_parallel_fail_loudly_without_repair(
 
     with pytest.raises(BudgetExhaustedError, match="free to fix"):
         assemble_and_verify(state, services)
+
+
+def test_a_stalled_repair_loop_stops_at_the_plateau(tmp_path: Path) -> None:
+    """263 → 63 → 66: the double-fugue's third sweep spent thirteen minutes
+    proving what the second already had. When the distinct-violation count
+    stops falling, the loop goes loud with the trajectory in hand."""
+    from tests.fakes.generator import ScriptedGenerator
+
+    free_section = SECTION.model_copy(update={"material": []})
+    spec = PieceSpec(
+        title="Plateau",
+        style_prompt="s",
+        voices=[UPPER, LOWER],
+        meters_allowed=[FOUR_FOUR],
+        target_minutes=4 / 90,
+    )
+    state = PipelineState(
+        spec=spec,
+        style=StylePack(parallel_fifths_policy="forbid"),
+        structure=StructurePlan(sections=[free_section]),
+        harmony={
+            "A": HarmonicSkeleton(
+                section_id="A",
+                events=[
+                    HarmonicEvent(offset=Fraction(0), duration=Fraction(1), chord="C")
+                ],
+            )
+        },
+        voices={
+            voice_key("A", "soprano"): VoicePart(
+                section_id="A", voice_id="soprano", lily_music=UPPER_MUSIC
+            ),
+            voice_key("A", "alto"): VoicePart(
+                section_id="A", voice_id="alto", lily_music=LOWER_MUSIC
+            ),
+        },
+    )
+    # Every "repair" — patch or rewrite — returns the same parallel lines:
+    # the loop cannot converge. Targets iterate in pair order (alto first).
+    generator = ScriptedGenerator(
+        by_voice={("A", "soprano"): UPPER_MUSIC, ("A", "alto"): LOWER_MUSIC},
+        patches=[{1: LOWER_MUSIC}, {1: UPPER_MUSIC}],
+    )
+    services = ComposeServices(
+        generator=generator,
+        renderer=LilypondAdapter(),
+        workdir=tmp_path / "work",
+        budgets=RetryBudgets(),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+
+    with pytest.raises(BudgetExhaustedError, match="stopped converging") as caught:
+        assemble_and_verify(state, services)
+
+    assert "1 -> 1" in str(caught.value), "the trajectory is in the message"
+    repairs = generator.calls + len(generator.patch_contexts)
+    assert repairs <= 2, "one repair sweep, then the plateau went loud"
