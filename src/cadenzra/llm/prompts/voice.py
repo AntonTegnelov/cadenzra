@@ -34,7 +34,10 @@ f#, or gbes.
   - Notes, rests, durations, ties, slurs, dynamics, hairpins and markup only. \
 No \\time, \\clef, \\key, \\tempo, \\score, \\new or any other structural command \
 — the score around your part supplies those.
-  - Print the dynamics the section asks for, as ordinary LilyPond (\\p, \\<, \\ff)."""
+  - Print the dynamics the section asks for, as ordinary LilyPond (\\p, \\<, \\ff).
+  - Before writing any bar's notes, count its durations so they sum to exactly \
+one full bar of the meter, and declare that count where the tool asks for \
+durations. A bar that does not add up is rejected before it is even read."""
 
 # The contract is piece-invariant, so it rides the system prompt: paying for
 # it in the user turn on every one of hundreds of voice calls was the cost

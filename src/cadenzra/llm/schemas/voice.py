@@ -25,16 +25,30 @@ def write_part_schema(*, techniques: bool) -> dict[str, Any]:
     (docs/10).
     """
     properties: dict[str, Any] = {
+        # Declared before the notes so the arithmetic is planned first — the
+        # parser sums each bar's declaration exactly, and a bar that does not
+        # add up is rejected before anything compiles.
+        "bar_durations": {
+            "type": "string",
+            "description": (
+                "Every duration in the part, bar by bar, in order, with bars "
+                "separated by | — e.g. '8 8 16 16 4. | 4 4 4.'. Plain values "
+                "with dots, or a real length like 1/6 for a tuplet note. Each "
+                "bar must sum to exactly one full bar of the meter: count "
+                "this out first, then write the notes to match."
+            ),
+        },
         "lily_music": {
             "type": "string",
             "description": (
                 "The music expression in LilyPond: absolute pitch, an explicit "
-                "duration on every note, a bar check | at the end of every bar, "
-                "and no structural commands."
+                "duration on every note — exactly the durations declared in "
+                "bar_durations — a bar check | at the end of every bar, and no "
+                "structural commands."
             ),
-        }
+        },
     }
-    required = ["lily_music"]
+    required = ["bar_durations", "lily_music"]
 
     if techniques:
         properties["techniques"] = {

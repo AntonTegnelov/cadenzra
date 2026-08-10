@@ -11,25 +11,51 @@ duplicating that here would be the same guard in two places (docs/08,
 principle 6).
 """
 
+from fractions import Fraction
 from typing import Any
 
 from pydantic import ValidationError
 
 from cadenzra.common.errors import LLMOutputError
+from cadenzra.llm.parsers.durations import check_declared_bars
 from cadenzra.model.primitives.ids import SectionId, VoiceId
 from cadenzra.model.voice import TechniqueSpan, VoicePart
 
 
 def parse_voice_part(
-    payload: dict[str, Any], *, section_id: SectionId, voice_id: VoiceId
+    payload: dict[str, Any],
+    *,
+    section_id: SectionId,
+    voice_id: VoiceId,
+    bars: int,
+    bar_length: Fraction,
 ) -> VoicePart:
-    """Build a `VoicePart` from a tool call's arguments."""
+    """Build a `VoicePart` from a tool call's arguments.
+
+    The duration declaration is checked bar by bar before anything compiles:
+    a groove template that sums to 15/16 used to enter at full generation
+    with no arithmetic gate at all, and patches then fought it one bar per
+    compile (docs/08 — parsers judge arithmetic; the compiler judges music).
+    """
     music = payload.get("lily_music")
     if not isinstance(music, str) or not music.strip():
         raise LLMOutputError(
             f"the {voice_id} part for section {section_id} came back without any "
             "notation in lily_music"
         )
+
+    declaration = payload.get("bar_durations")
+    if not isinstance(declaration, str) or not declaration.strip():
+        raise LLMOutputError(
+            f"the {voice_id} part for section {section_id} came back without its "
+            "bar_durations declaration"
+        )
+    check_declared_bars(
+        declaration,
+        bars=bars,
+        bar_length=bar_length,
+        what=f"the {voice_id} part for section {section_id}",
+    )
 
     lyrics = payload.get("lily_lyrics")
     if lyrics is not None and not isinstance(lyrics, str):

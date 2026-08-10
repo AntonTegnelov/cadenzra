@@ -513,10 +513,18 @@ def _voice_to_convergence(
         if patching:
             revealed = _flagged_bars(feedback, section)
             if revealed is None or not revealed.isdisjoint(offered | set(editable)):
-                # The patch failed at its own task: an offered bar still
-                # fails, or the part no longer even compiles.
+                # An offered bar still fails, or the part no longer even
+                # compiles: the cycle pays. But a patch that cleared *some*
+                # of its bars is working, not failing — a live run repaired
+                # six of seven offered bars and the one stubborn bar tripped
+                # the fallback, which threw all six repairs away. Only a
+                # patch that clears nothing is a strike.
                 attempt += 1
-                patch_attempts += 1
+                cleared_any = revealed is not None and bool(
+                    set(editable) - revealed
+                )
+                if not cleared_any:
+                    patch_attempts += 1
             offered |= set(editable)
             rejected = part
         elif shown and {item.fingerprint() for item in feedback} == shown:

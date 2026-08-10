@@ -228,6 +228,8 @@ class GeminiGenerator:
             payload,
             section_id=ctx.section.section_id,
             voice_id=ctx.voice.voice_id,
+            bars=ctx.section.bars,
+            bar_length=ctx.section.meter.bar_length,
         )
 
     def patch_voice(self, ctx: PatchContext) -> dict[int, str]:

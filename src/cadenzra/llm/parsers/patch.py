@@ -18,26 +18,8 @@ from fractions import Fraction
 from typing import Any
 
 from cadenzra.common.errors import LLMOutputError
+from cadenzra.llm.parsers.durations import duration_value
 from cadenzra.notation.scaffold import count_bar_checks
-
-_PLAIN_VALUES = frozenset({1, 2, 4, 8, 16, 32, 64, 128})
-
-
-def _duration_value(token: str) -> Fraction:
-    """One declared duration: "4", "8.", "16..", or a real length like "1/6"."""
-    if "/" in token:
-        try:
-            return Fraction(token)
-        except (ValueError, ZeroDivisionError):
-            raise LLMOutputError(f"unreadable duration {token!r}") from None
-    base = token.rstrip(".")
-    dots = len(token) - len(base)
-    if not base.isdigit() or int(base) not in _PLAIN_VALUES:
-        raise LLMOutputError(
-            f"unreadable duration {token!r}; declare plain values (4, 8., 16) "
-            "or a real length like 1/6 for a tuplet note"
-        )
-    return Fraction(1, int(base)) * (2 - Fraction(1, 2**dots))
 
 
 def parse_bar_patch(
@@ -73,7 +55,7 @@ def parse_bar_patch(
         except ValueError:
             raise LLMOutputError(f"a replacement names a non-numeric bar: {raw_bar!r}") from None
         total = sum(
-            (_duration_value(token) for token in durations.split()), Fraction(0)
+            (duration_value(token) for token in durations.split()), Fraction(0)
         )
         if total != bar_length:
             raise LLMOutputError(

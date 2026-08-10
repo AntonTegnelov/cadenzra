@@ -409,6 +409,54 @@ def test_a_patch_that_reveals_a_masked_bar_costs_no_attempt(tmp_path: Path) -> N
     assert part.lily_music == splice_bars(spliced, {3: fix3})
 
 
+def test_a_patch_that_clears_some_bars_is_not_a_failed_patch(tmp_path: Path) -> None:
+    """Live, a patch legally repaired six of seven offered bars; the one
+    stubborn bar counted it as a failure, a second stubborn cycle hit
+    _PATCH_ATTEMPTS, and the fallback full rewrite threw all six repairs
+    away and reinstated the broken groove template everywhere. Partial
+    progress keeps the patching path alive — only a patch that clears
+    nothing it was offered is a strike."""
+    from cadenzra.model.primitives.time import offset_of
+
+    fix1, fix2 = "g'4. g'2 |", "e'4. e'2 |"
+    still_bad = "d'8 d' e' e' f'4 |"
+    first = f"{BAD} {BAD}"
+    section = _loop_section().model_copy(update={"bars": 2})
+    state = _loop_state(section).model_copy(
+        update={
+            "voices": {
+                voice_key("A", "alto"): VoicePart(
+                    section_id="A", voice_id="alto", lily_music=first
+                )
+            }
+        }
+    )
+    after_one = splice_bars(first, {1: fix1, 2: still_bad})
+    generator = ScriptedGenerator(
+        patches=[{1: fix1, 2: still_bad}, {2: still_bad}, {2: fix2}]
+    )
+    renderer = RecordingRenderer(
+        [
+            failing_bar_check(line=9, column=after_one.index("d'") + 1),
+            failing_bar_check(line=9, column=after_one.index("d'") + 1),
+            clean(),
+        ]
+    )
+    services = _loop_services(generator, renderer, tmp_path)
+    prior = [
+        _bar_scoped_item(),
+        _bar_scoped_item().model_copy(
+            update={"location": offset_of(2, 1, SEVEN_EIGHT)}
+        ),
+    ]
+
+    part = _voice_to_convergence(state, services, section, "alto", prior=prior)
+
+    assert generator.calls == 0, "no full rewrite ever happened"
+    assert len(generator.patch_contexts) == 3
+    assert part.lily_music == splice_bars(after_one, {2: fix2})
+
+
 def test_a_compile_failure_is_never_patched(tmp_path: Path) -> None:
     """A part that does not compile has no trustworthy bar numbers to patch."""
     item = FeedbackItem(
