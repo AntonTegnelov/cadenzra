@@ -364,6 +364,21 @@ def _protected_bars(
     return bars
 
 
+def _flagged_bars(
+    feedback: list[FeedbackItem], section: SectionPlan
+) -> set[int] | None:
+    """The bars the feedback names, or None when any item is not bar-scoped
+    (a compile failure or parser complaint indicts the whole part)."""
+    flagged: set[int] = set()
+    for item in feedback:
+        if item.source == "parser" or item.location is None:
+            return None
+        start = bar_containing(item.location, section.meter)
+        end = bar_containing(item.span[1], section.meter) if item.span else start
+        flagged |= set(range(start, end + 1))
+    return flagged
+
+
 def _editable_bars(
     feedback: list[FeedbackItem],
     rejected: VoicePart | None,
@@ -373,18 +388,13 @@ def _editable_bars(
     """The bars a patch may rewrite, or () when only a full rewrite can help.
 
     Empty when there is nothing to patch against, when any item is not
-    bar-scoped (a compile failure or parser complaint indicts the whole
-    part), or when every flagged bar is prescribed.
+    bar-scoped, or when every flagged bar is prescribed.
     """
     if rejected is None or not feedback:
         return ()
-    flagged: set[int] = set()
-    for item in feedback:
-        if item.source == "parser" or item.location is None:
-            return ()
-        start = bar_containing(item.location, section.meter)
-        end = bar_containing(item.span[1], section.meter) if item.span else start
-        flagged |= set(range(start, end + 1))
+    flagged = _flagged_bars(feedback, section)
+    if flagged is None:
+        return ()
     total = count_bar_checks(rejected.lily_music)
     return tuple(
         bar for bar in sorted(flagged - protected) if 1 <= bar <= total
@@ -411,6 +421,14 @@ def _voice_to_convergence(
     a prescribed entry mechanically impossible. After `_PATCH_ATTEMPTS`
     failed patches, full regeneration is the fallback — which is what
     docs/04 promised all along.
+
+    LilyPond reports only the first failed bar check per compile, so a part
+    with several bad bars is discovered one bar at a time. The permission
+    model makes attribution exact: a spliced patch can only have touched the
+    bars it was offered, so when the next compile flags only bars it was
+    never offered, the patch did its job and the compile revealed a defect
+    that was already there. Such a cycle consumes no retry budget — the
+    reveals are bounded by the bars on the page.
     """
     voice_spec = state.spec.voices_by_id[voice_id]
     feedback: list[FeedbackItem] = list(prior or [])
@@ -419,13 +437,19 @@ def _voice_to_convergence(
     )
     protected = _protected_bars(state, section, voice_id)
     patch_attempts = 0
+    offered: set[int] = set()  # bars ever offered against the current part text
+    attempt = 0
+    cycle = 0
 
-    for attempt in range(1, services.budgets.voice + 1):
+    while attempt < services.budgets.voice:
+        cycle += 1
         editable = _editable_bars(feedback, rejected, section, protected)
+        patching = bool(editable) and patch_attempts < _PATCH_ATTEMPTS
+        if not patching:
+            attempt += 1
         try:
-            if editable and patch_attempts < _PATCH_ATTEMPTS:
+            if patching:
                 assert rejected is not None  # _editable_bars requires it
-                patch_attempts += 1
                 patch = services.generator.patch_voice(
                     PatchContext(
                         section=section,
@@ -443,6 +467,8 @@ def _voice_to_convergence(
                     }
                 )
             else:
+                # A fresh part: bar numbers from the old text no longer apply.
+                offered = set()
                 part = services.generator.generate_voice(
                     VoiceContext(
                         section=section,
@@ -460,6 +486,9 @@ def _voice_to_convergence(
             # Unparseable output is a rejection whose diagnosis is already
             # written; the next attempt gets it verbatim rather than the run
             # ending over something a retry could fix.
+            if patching:
+                attempt += 1
+                patch_attempts += 1
             feedback = _malformed("voice", section.section_id, voice_id, error)
             _log.warning(
                 "%s in section %s came back malformed on attempt %d/%d: %s",
@@ -476,10 +505,18 @@ def _voice_to_convergence(
             voice_spec,
             section,
             services.renderer,
-            services.workdir / f"{section.section_id}-{voice_id}-{attempt}",
+            services.workdir / f"{section.section_id}-{voice_id}-{cycle}",
         )
         if not feedback:
             return part
+        if patching:
+            revealed = _flagged_bars(feedback, section)
+            if revealed is None or not revealed.isdisjoint(offered | set(editable)):
+                # The patch failed at its own task: an offered bar still
+                # fails, or the part no longer even compiles.
+                attempt += 1
+                patch_attempts += 1
+        offered |= set(editable)
         rejected = part
         _log.warning(
             "%s in section %s failed on attempt %d/%d: %s",
@@ -493,7 +530,7 @@ def _voice_to_convergence(
             services.runlog.validation(
                 what=f"the {voice_id} part for section {section.section_id}",
                 loop_key=attempt_key("voice", section.section_id, voice_id),
-                attempt=attempt,
+                attempt=cycle,
                 budget=services.budgets.voice,
                 messages=[item.message for item in feedback],
                 items=feedback_dicts(feedback, {section.section_id: section.meter}),

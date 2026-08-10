@@ -246,13 +246,17 @@ def _loop_state(section: SectionPlan, *, motifs: MotifLibrary | None = None) -> 
 
 
 def _loop_services(
-    generator: ScriptedGenerator, renderer: RecordingRenderer, tmp_path: Path
+    generator: ScriptedGenerator,
+    renderer: RecordingRenderer,
+    tmp_path: Path,
+    *,
+    budgets: RetryBudgets | None = None,
 ) -> ComposeServices:
     return ComposeServices(
         generator=generator,
         renderer=renderer,
         workdir=tmp_path,
-        budgets=RetryBudgets(),
+        budgets=budgets or RetryBudgets(),
         synthesizer=None,  # type: ignore[arg-type]
         output_dir=tmp_path,
     )
@@ -326,6 +330,39 @@ def test_two_failed_patches_fall_back_to_full_regeneration(tmp_path: Path) -> No
     assert len(generator.patch_contexts) == 2
     assert generator.calls == 1, "the third attempt was the full rewrite"
     assert part.lily_music == GOOD
+
+
+def test_a_patch_that_reveals_a_masked_bar_costs_no_attempt(tmp_path: Path) -> None:
+    """LilyPond reports only the *first* failed bar check per compile, so a
+    part with several short bars is discovered one bar per compile. A patch
+    can only touch the bars it was offered — when the next compile flags a
+    bar it was never offered, that bar was already broken and merely masked.
+    Revealing it is progress, not this patch's failure, and must not consume
+    the retry budget: here three latent bars converge under a budget of 2.
+    (Live: orchestra's flute burned 3 attempts on bars 9, 10, 11 of the same
+    kind, each patch correct, and the run died anyway.)"""
+    bar2, bar3 = "d'8 d' e' e' f'4. |", "g'8 g' a' a' b'4. |"
+    first = f"{GOOD} {bar2} {bar3}"
+    fix2, fix3 = "d'4. d'2 |", "g'4. g'2 |"
+    spliced = splice_bars(first, {2: fix2})
+    section = _loop_section().model_copy(update={"bars": 3})
+    generator = ScriptedGenerator([first], patches=[{2: fix2}, {3: fix3}])
+    renderer = RecordingRenderer(
+        [
+            failing_bar_check(line=9, column=first.index("d'") + 1),
+            failing_bar_check(line=9, column=spliced.index("g'") + 1),
+            clean(),
+        ]
+    )
+    services = _loop_services(
+        generator, renderer, tmp_path, budgets=RetryBudgets(voice=2)
+    )
+
+    part = _voice_to_convergence(_loop_state(section), services, section, "alto")
+
+    assert generator.calls == 1, "one full write; every repair was a patch"
+    assert len(generator.patch_contexts) == 2
+    assert part.lily_music == splice_bars(spliced, {3: fix3})
 
 
 def test_a_compile_failure_is_never_patched(tmp_path: Path) -> None:
