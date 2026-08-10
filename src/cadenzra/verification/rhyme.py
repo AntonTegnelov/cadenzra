@@ -70,38 +70,49 @@ def scheme_violations(
 ) -> list[str]:
     """Where the lines fail the scheme they were written to.
 
+    A scheme describes a **stanza** and repeats over the section, which is how
+    verse has always worked: AABB across twelve lines is three quatrains, not
+    one impossible demand for four lines to cover twelve bars. Reading it as a
+    single fixed-length stanza forced a writer to answer a twenty-bar section
+    with four lines of thirty syllables each — technically a rhyme, and a
+    paragraph rather than a lyric.
+
+    Letters only bind *within* a stanza: the second quatrain's A owes nothing
+    to the first's.
+
     Messages are rehearsal notes, naming the lines and the words that do not
     agree, because their real consumer is a regeneration prompt (docs/04).
     """
-    letters = [letter for letter in scheme if letter != "x"]
-    del letters  # only the positional scheme matters below
-
     problems: list[str] = []
-    if len(endings) != len(scheme):
+    if not scheme:
+        return problems
+    if len(endings) % len(scheme):
         problems.append(
-            f"the rhyme scheme {scheme} asks for {len(scheme)} lines, "
-            f"and there are {len(endings)}"
+            f"the rhyme scheme {scheme} covers {len(scheme)} lines and repeats, "
+            f"so the line count should be a multiple of {len(scheme)}; "
+            f"there are {len(endings)}"
         )
 
-    groups: dict[str, list[int]] = {}
-    for index, letter in enumerate(scheme[: len(endings)]):
-        if letter == "x":
-            continue
-        groups.setdefault(letter, []).append(index)
+    for start in range(0, len(endings), len(scheme)):
+        stanza = endings[start : start + len(scheme)]
+        groups: dict[str, list[int]] = {}
+        for index, letter in enumerate(scheme[: len(stanza)]):
+            if letter == "x":
+                continue
+            groups.setdefault(letter, []).append(index)
 
-    for letter, indexes in groups.items():
-        if len(indexes) < 2:
-            continue
-        anchor = indexes[0]
-        for other in indexes[1:]:
-            verdict = lines_rhyme(endings[anchor], endings[other])
-            if verdict is False:
-                problems.append(
-                    f"lines {anchor + 1} and {other + 1} are both marked {letter} "
-                    f"in the scheme {scheme}, but "
-                    f'"{_ending_text(endings[anchor])}" and '
-                    f'"{_ending_text(endings[other])}" do not rhyme'
-                )
+        for letter, indexes in groups.items():
+            if len(indexes) < 2:
+                continue
+            anchor = indexes[0]
+            for other in indexes[1:]:
+                if lines_rhyme(stanza[anchor], stanza[other]) is False:
+                    problems.append(
+                        f"lines {start + anchor + 1} and {start + other + 1} are "
+                        f"both marked {letter} in the scheme {scheme}, but "
+                        f'"{_ending_text(stanza[anchor])}" and '
+                        f'"{_ending_text(stanza[other])}" do not rhyme'
+                    )
     return problems
 
 

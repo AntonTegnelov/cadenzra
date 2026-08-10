@@ -73,10 +73,27 @@ def test_free_lines_are_never_checked() -> None:
     assert scheme_violations(endings, "AxA") == []
 
 
-def test_a_line_count_that_does_not_match_the_scheme_is_reported() -> None:
+def test_a_scheme_describes_a_stanza_and_repeats() -> None:
+    """Reading a scheme as one fixed-length stanza forced a writer to answer a
+    twenty-bar section with four lines of thirty syllables. AABB across eight
+    lines is two quatrains, and the second one's A owes nothing to the first."""
+    two_stanzas = [
+        ["night"], ["light"], ["sea"], ["tree"],
+        ["stone"], ["bone"], ["day"], ["way"],
+    ]
+
+    assert scheme_violations(two_stanzas, "AABB") == []
+
+    broken = [*two_stanzas[:5], ["orange"], *two_stanzas[6:]]
+    problems = scheme_violations(broken, "AABB")
+    assert len(problems) == 1
+    assert "lines 5 and 6" in problems[0]
+
+
+def test_a_line_count_that_is_not_a_whole_number_of_stanzas_is_reported() -> None:
     problems = scheme_violations([["night"], ["light"]], "AABB")
 
-    assert any("4 lines" in problem for problem in problems)
+    assert any("multiple of 4" in problem for problem in problems)
 
 
 def test_a_letter_used_once_constrains_nothing() -> None:

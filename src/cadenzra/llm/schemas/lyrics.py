@@ -114,7 +114,10 @@ def write_lyrics_schema(voice_ids: list[str]) -> dict[str, Any]:
                             "lines": {
                                 "type": "array",
                                 "description": (
-                                    "The words, one line per entry. Syllables of "
+                                    "The words, one line per entry. A line is one "
+                                    "breath-phrase — roughly a bar or two of the "
+                                    "music, so a long section has many lines. "
+                                    "Syllables of "
                                     "a word split across notes are separated by "
                                     "-- , and a syllable held across notes is "
                                     "followed by __ for each extra note. "

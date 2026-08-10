@@ -186,10 +186,13 @@ def build_lyrics_prompt(ctx: LyricsContext) -> str:
         )
 
     if directive.rhyme_scheme:
+        scheme = directive.rhyme_scheme
         blocks.append(
-            f"Rhyme scheme: {directive.rhyme_scheme}. One letter per line, in "
-            "order; lines marked with the same letter rhyme at their ends, and x "
-            "is free. Write exactly as many lines as the scheme has letters."
+            f"Rhyme scheme: {scheme}. One letter per line; lines marked with the "
+            f"same letter rhyme at their ends, and x is free. The scheme covers "
+            f"one stanza of {len(scheme)} lines and then repeats — write as many "
+            "stanzas as the music has room for. Each stanza rhymes within "
+            "itself; the next one starts fresh."
         )
 
     devices = devices_block(directive.devices)
@@ -198,7 +201,10 @@ def build_lyrics_prompt(ctx: LyricsContext) -> str:
 
     blocks.append(
         "Write the words under these conventions:\n"
-        "  - One line of text per line of the lyric, as a list.\n"
+        "  - A line is a phrase a singer delivers in one breath — roughly one "
+        "or two bars of the music above, not one line per section. Write as "
+        "many as the music needs; a long section wants many short lines, never "
+        "a few enormous ones.\n"
         "  - Split a word across notes with -- between its syllables: "
         "sha -- dow.\n"
         "  - Hold one syllable across several notes by following it with __ : "
