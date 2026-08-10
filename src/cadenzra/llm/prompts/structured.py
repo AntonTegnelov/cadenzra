@@ -148,6 +148,14 @@ def build_motif_prompt(
 ) -> str:
     """Write the material every later entry derives from."""
     first = _carrying_section(briefs, plan)
+
+    def _meter_of(brief: MaterialBrief) -> MeterSpec:
+        # The same lookup the validator uses (verification/motifs.py): each
+        # motif is checked in its first declaring section's meter, so that is
+        # the meter it must be told to write in — one "Write in 7/8" for a
+        # batch whose hook enters in 4/4 is an instruction no model can obey.
+        return plan.meter_declaring(brief.motif_id) or spec.meters_allowed[0]
+
     blocks = [
         f"Write the recurring material for this piece: {len(briefs)} "
         + ("theme." if len(briefs) == 1 else "themes."),
@@ -158,6 +166,8 @@ def build_motif_prompt(
                 if brief.carrying_voices
                 else ""
             )
+            + f" Write it in {_meter_of(brief).surface_string()}, every bar "
+            "filling that meter exactly."
             for brief in briefs
         ),
         # Without this, a brief carried by three voices comes back as three
@@ -192,10 +202,14 @@ def build_motif_prompt(
             "narrow enough that every one of those still fits its voice."
         )
 
-    blocks.append(f"Write in {first.meter.surface_string()}, key {first.key}.")
-    cells = rhythmic_cells_text(style, first.meter)
-    if cells:
-        blocks.append("Rhythmic cells of the style:\n" + cells)
+    blocks.append(f"Key: {first.key}.")
+    meters = {_meter_of(brief).surface_string(): _meter_of(brief) for brief in briefs}
+    for meter in meters.values():
+        cells = rhythmic_cells_text(style, meter)
+        if cells:
+            blocks.append(
+                f"Rhythmic cells of the style in {meter.surface_string()}:\n" + cells
+            )
     blocks.append(
         "Keep each one short: one to four bars, at most twelve notes. Every return "
         "of this material has to be written out exactly, and a long line is neither "

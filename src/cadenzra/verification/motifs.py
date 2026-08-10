@@ -119,11 +119,9 @@ def validate_motifs(
 
 
 def _meter_for(motif_id: str, plan: StructurePlan, spec: PieceSpec) -> MeterSpec:
-    """The meter a motif is written in — the first section that declares it."""
-    for section in plan.sections:
-        if any(entry.motif_id == motif_id for entry in section.material):
-            return section.meter
-    return spec.meters_allowed[0]
+    """The meter a motif is written in — shared with the prompt builder, so
+    what the model is told and what it is checked against cannot drift."""
+    return plan.meter_declaring(motif_id) or spec.meters_allowed[0]
 
 
 def _compiled_pitches(

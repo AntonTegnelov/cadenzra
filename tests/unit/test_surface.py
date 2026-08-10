@@ -362,6 +362,63 @@ def test_every_regenerating_layer_shows_the_model_why_it_was_rejected() -> None:
         assert "as little else as possible" in prompt
 
 
+def test_each_motif_is_told_the_meter_it_will_be_checked_in() -> None:
+    """The prompt said "Write in 7/8" once for the whole batch while the
+    validator checked each motif in its own declaring section's meter — an
+    instruction no model could satisfy for a hook declared in 4/4, and
+    metal-kpop burned eight straight motif rejections on it, identically
+    across model tiers. Each brief now names its own meter, from the same
+    lookup the validator uses."""
+    from cadenzra.llm.prompts.structured import build_motif_prompt
+    from cadenzra.model.spec import PieceSpec
+    from cadenzra.model.structure import (
+        DynamicsPlan,
+        MaterialBrief,
+        MaterialEntry,
+        SectionPlan,
+        StructurePlan,
+    )
+
+    seven = SECTION.model_copy(
+        update={
+            "material": [
+                MaterialEntry(motif_id="chug", voice_id="alto", bar=1, relation="exact")
+            ]
+        }
+    )
+    four = SectionPlan(
+        section_id="B",
+        bars=4,
+        meter=simple_meter(4, 4),
+        key="c major",
+        tempo_bpm=120,
+        texture="homophonic",
+        dynamics=DynamicsPlan(start="mf"),
+        active_voices=["alto"],
+        material=[
+            MaterialEntry(motif_id="hook", voice_id="alto", bar=1, relation="exact")
+        ],
+    )
+    spec = PieceSpec(
+        title="T",
+        style_prompt="s",
+        voices=[ALTO],
+        meters_allowed=[SEVEN_EIGHT, simple_meter(4, 4)],
+        target_minutes=1.0,
+    )
+    briefs = [
+        MaterialBrief(motif_id="chug", role="riff", description="a chug"),
+        MaterialBrief(motif_id="hook", role="theme", description="a hook"),
+    ]
+
+    prompt = build_motif_prompt(briefs, spec, STYLE, StructurePlan(sections=[seven, four]))
+
+    chug_line = next(line for line in prompt.splitlines() if "chug (" in line)
+    hook_line = next(line for line in prompt.splitlines() if "hook (" in line)
+    assert "7/8" in chug_line, "the riff is written and checked in 7/8"
+    assert "4/4" in hook_line, "the hook is written and checked in 4/4"
+
+
 def test_barlines_in_lyrics_are_removed_not_carried_through() -> None:
     """A model mirroring the music's barlines into its lyrics writes bar checks
     that pass inside a single-section scaffold and then fail once sections are

@@ -145,6 +145,20 @@ class StructurePlan(BaseModel, frozen=True):
     def sections_by_id(self) -> dict[SectionId, SectionPlan]:
         return {section.section_id: section for section in self.sections}
 
+    def meter_declaring(self, motif_id: MotifId) -> MeterSpec | None:
+        """The meter of the first section that declares this motif.
+
+        This is the meter the motif is written in *and* validated against —
+        the prompt and the validator must agree on it, or the model is given
+        an instruction it can never satisfy (a hook prompted in 7/8 and
+        checked in 4/4 burned eight straight rejections, identically across
+        model tiers).
+        """
+        for section in self.sections:
+            if any(entry.motif_id == motif_id for entry in section.material):
+                return section.meter
+        return None
+
     @property
     def declares_materials(self) -> bool:
         """Whether `generate_motifs` runs at all — the graph's conditional skip."""
