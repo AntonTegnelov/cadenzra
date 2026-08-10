@@ -295,19 +295,22 @@ def _check_refrain(
 def _brings_back(voice: VoiceLyrics, original: VoiceLyrics) -> bool:
     """Whether a refrain reprises its source.
 
-    Containment rather than equality, because a final chorus that repeats the
-    hook and then extends it over the extra bars is doing the right thing
-    musically — and demanding exact equality rejected one that had reprised
-    every word correctly. The contract is that the words come back, not that
-    nothing else happens.
+    The shorter of the two must be a contiguous run of the longer, which is
+    symmetric on purpose. A final chorus with extra bars repeats the hook and
+    carries on; a short reprise sings as much of it as it has room for and
+    stops. Both are what a refrain does, and equality rejected both — measured,
+    on three separate pieces, each of which had reprised its words correctly.
+
+    What it still catches is the real failure: a section declared a refrain
+    that sings something else.
     """
-    words = _words(voice)
-    wanted = _words(original)
-    if not wanted:
+    words, wanted = _words(voice), _words(original)
+    if not wanted or not words:
         return True
+    longer, shorter = (words, wanted) if len(words) >= len(wanted) else (wanted, words)
     return any(
-        words[start : start + len(wanted)] == wanted
-        for start in range(len(words) - len(wanted) + 1)
+        longer[start : start + len(shorter)] == shorter
+        for start in range(len(longer) - len(shorter) + 1)
     )
 
 

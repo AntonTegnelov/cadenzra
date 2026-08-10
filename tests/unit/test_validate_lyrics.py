@@ -289,6 +289,22 @@ def test_a_refrain_may_redistribute_its_words_between_voices() -> None:
     ) == []
 
 
+def test_a_short_reprise_sings_as_much_as_it_has_room_for() -> None:
+    """The mirror of the extended case: a chorus with less music than the one
+    it reprises cannot fit every word, and rejecting it demanded something the
+    bars could not hold."""
+    source = _lyrics("A", soprano=["the light falls slow", "and will not return"])
+    short = _lyrics("C", soprano=["the light falls slow"])
+
+    assert _validate(
+        short,
+        SectionLyricDirective(
+            section_id="C", story_beat="return", refrain_of="A", relationship="solo"
+        ),
+        refrain_source=source,
+    ) == []
+
+
 def test_a_refrain_that_returns_unchanged_passes() -> None:
     source = _lyrics("A", soprano=["the light falls slow"])
     same = _lyrics("C", soprano=["The light falls slow"])  # casing is not a change
