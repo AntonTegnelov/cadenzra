@@ -18,7 +18,7 @@ from fractions import Fraction
 from typing import Any
 
 from cadenzra.common.errors import LLMOutputError
-from cadenzra.llm.parsers.durations import duration_value
+from cadenzra.llm.parsers.durations import duration_token, duration_value
 from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.notation.scaffold import count_bar_checks
 
@@ -59,11 +59,22 @@ def parse_bar_patch(
             (duration_value(token) for token in durations.split()), Fraction(0)
         )
         if total != meter.bar_length:
+            # The deficit is known exactly, so the rejection names a literal
+            # fix — the live synth declared 15/16 six times against generic
+            # "recount" advice.
+            difference = meter.bar_length - total
+            token = duration_token(abs(difference))
+            if difference > 0 and token:
+                hint = f" — one way: add an r{token}, or lengthen one note by {difference}"
+            elif token:
+                hint = f" — one way: shorten one note by {-difference} (a {token})"
+            else:
+                hint = ""
             raise LLMOutputError(
                 f"the replacement for bar {bar} declares durations summing to "
                 f"{total} of a whole note, but one bar of "
                 f"{meter.surface_string()} holds {meter.bar_length} — recount, "
-                "then write notes that fill the bar exactly"
+                "then write notes that fill the bar exactly" + hint
             )
         if bar not in editable:
             raise LLMOutputError(

@@ -132,6 +132,10 @@ def test_a_declaration_that_does_not_sum_to_the_bar_is_rejected_with_both_number
     with pytest.raises(LLMOutputError, match="15/16") as caught:
         parse_bar_patch(payload, [1], meter=FOUR_FOUR)
     assert "sum" in str(caught.value)
+    assert "r16" in str(caught.value), (
+        "the deficit is known exactly, so the rejection names a literal fix — "
+        "the live synth declared 15/16 six times against generic advice"
+    )
 
 
 def test_dotted_and_tuplet_durations_declare_their_real_length() -> None:

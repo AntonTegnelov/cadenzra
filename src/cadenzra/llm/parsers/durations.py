@@ -33,6 +33,16 @@ def duration_value(token: str) -> Fraction:
     return Fraction(1, int(base)) * (2 - Fraction(1, 2**dots))
 
 
+def duration_token(value: Fraction) -> str | None:
+    """The plain token for a length, dots included — None when there is none."""
+    for base in sorted(_PLAIN_VALUES):
+        length = Fraction(1, base)
+        for dots in (0, 1, 2):
+            if length * (2 - Fraction(1, 2**dots)) == value:
+                return f"{base}{'.' * dots}"
+    return None
+
+
 def check_declared_bars(
     declaration: str, *, bars: int, meter: MeterSpec, what: str
 ) -> None:
