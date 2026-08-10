@@ -20,7 +20,7 @@ from cadenzra.llm.prompts.surface import (
     range_text,
     rhythmic_cells_text,
 )
-from cadenzra.llm.prompts.voice import build_voice_prompt
+from cadenzra.llm.prompts.voice import SYSTEM_PROMPT, build_voice_prompt
 from cadenzra.llm.schemas.voice import write_part_schema
 from cadenzra.model.contexts import MaterialInstruction, VoiceContext
 from cadenzra.model.harmony import HarmonicEvent, HarmonicSkeleton
@@ -131,12 +131,30 @@ def test_the_prompt_speaks_the_musician_register() -> None:
     assert "pc12" not in prompt
 
 
-def test_the_prompt_states_the_fragment_contract() -> None:
+def test_the_fragment_contract_lives_in_the_system_prompt() -> None:
+    """The conventions never change across a piece, so paying for them in the
+    user prompt on every one of hundreds of voice calls was the audit's
+    "a system prompt billed as a user prompt". The user turn keeps only the
+    per-meter clauses."""
     prompt = build_voice_prompt(_ctx())
 
-    assert "bar check" in prompt
-    assert "\\relative" in prompt
-    assert "explicit duration" in prompt.lower()
+    assert "bar check" in SYSTEM_PROMPT
+    assert "\\relative" in SYSTEM_PROMPT
+    assert "explicit duration" in SYSTEM_PROMPT.lower()
+    assert "\\relative" not in prompt
+    assert "Write the part under these conventions" not in prompt
+
+
+def test_the_prompt_reads_piece_wide_then_section_then_voice() -> None:
+    """Invariant-first ordering is what gives repeated calls a shared prefix —
+    a cache can only key on what comes first."""
+    prompt = build_voice_prompt(_ctx())
+
+    style_at = prompt.index("driving 2+2+3")  # piece-wide: rhythmic cells
+    section_at = prompt.index("Section A")  # section-wide brief
+    task_at = prompt.index("Write the alto part")  # voice-specific
+
+    assert style_at < section_at < task_at
 
 
 def test_the_prompt_spells_out_an_odd_meters_grouping() -> None:

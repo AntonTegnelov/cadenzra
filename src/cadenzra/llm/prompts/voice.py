@@ -22,15 +22,8 @@ from cadenzra.llm.prompts.surface import (
 from cadenzra.model.contexts import VoiceContext
 from cadenzra.model.voice import TECHNIQUE_VOCABULARY
 
-SYSTEM_PROMPT = """\
-You are a composer writing one vocal or instrumental part at a time, in \
-LilyPond notation. You write idiomatic, singable, stylistically committed \
-music that fits exactly the bars and harmony you are given.
-
-Write the music by calling the `write_part` tool. Never reply with prose."""
-
 _CONTRACT = """\
-Write the part under these conventions:
+Write every part under these conventions:
   - Absolute pitch with explicit octave marks (c' is middle C). Never \\relative.
   - Dutch note names, which is what LilyPond reads by default. The rule is \
 regular and covers every letter: a flat adds -es and a sharp adds -is — ces \
@@ -43,24 +36,49 @@ No \\time, \\clef, \\key, \\tempo, \\score, \\new or any other structural comman
 — the score around your part supplies those.
   - Print the dynamics the section asks for, as ordinary LilyPond (\\p, \\<, \\ff)."""
 
+# The contract is piece-invariant, so it rides the system prompt: paying for
+# it in the user turn on every one of hundreds of voice calls was the cost
+# audit's "a system prompt billed as a user prompt". Only the per-meter
+# clauses (`_meter_clauses`) stay in the user turn.
+SYSTEM_PROMPT = f"""\
+You are a composer writing one vocal or instrumental part at a time, in \
+LilyPond notation. You write idiomatic, singable, stylistically committed \
+music that fits exactly the bars and harmony you are given.
+
+{_CONTRACT}
+
+Write the music by calling the `write_part` tool. Never reply with prose."""
+
 
 def build_voice_prompt(ctx: VoiceContext) -> str:
-    """The user-turn prompt for one (section, voice) generation."""
-    blocks = [
-        f"Write the {ctx.voice.voice_id} part for this section.",
-        section_text(ctx.section),
-        f"Range for {ctx.voice.voice_id}: {range_text(ctx.voice)}. "
-        "Every note must fall inside it.",
-    ]
+    """The user-turn prompt for one (section, voice) generation.
+
+    Ordered piece-wide → section-wide → voice-specific, invariant text first:
+    a cache can only key on a shared prefix, and two voices of one section
+    share everything up to the task line.
+    """
+    blocks = []
 
     style = style_text(ctx.style, ctx.section.meter)
     if style:
         blocks.append(style)
 
+    blocks.append(section_text(ctx.section))
+
+    meter_clauses = _meter_clauses(ctx)
+    if meter_clauses:
+        blocks.append(meter_clauses)
+
     if ctx.skeleton is not None and ctx.skeleton.events:
         blocks.append(
             "Harmony to write against:\n" + chord_chart(ctx.skeleton, ctx.section.meter)
         )
+
+    blocks.append(f"Write the {ctx.voice.voice_id} part for this section.")
+    blocks.append(
+        f"Range for {ctx.voice.voice_id}: {range_text(ctx.voice)}. "
+        "Every note must fall inside it."
+    )
 
     for instruction in ctx.materials:
         blocks.append(material_text(instruction))
@@ -70,8 +88,6 @@ def build_voice_prompt(ctx: VoiceContext) -> str:
             f"The {ctx.voice.voice_id} line ended the previous section like this — "
             f"continue naturally from it:\n  {ctx.previous_tail}"
         )
-
-    blocks.append(_contract_for(ctx))
 
     if ctx.voice.lyrics:
         blocks.append(
@@ -111,24 +127,29 @@ def _siblings_block(ctx: VoiceContext) -> str:
     )
 
 
-def _contract_for(ctx: VoiceContext) -> str:
-    """The fragment contract, plus the meter reminder this section needs."""
+def _meter_clauses(ctx: VoiceContext) -> str:
+    """The meter reminders this section needs — section-shaped, gated.
+
+    The rest of the fragment contract is invariant and lives in the system
+    prompt; these two clauses depend on the section's meter, so they stay in
+    the user turn (and only appear where an odd or additive meter needs them).
+    """
     meter = ctx.section.meter
-    contract = _CONTRACT
+    clauses = []
     if meter.grouping is not None:
         grouping = "+".join(str(count) for count in meter.grouping)
-        contract += (
-            f"\n  - The meter is {meter.surface_string()}: every bar holds "
+        clauses.append(
+            f"The meter is {meter.surface_string()}: every bar holds "
             f"{meter.units_per_bar} {_unit_name(meter.unit)}s, felt as {grouping}. "
             "Beam and phrase with that grouping."
         )
     if meter.is_additive:
-        contract += (
-            f"\n  - {meter.surface_string_bare()} is an additive meter: a bar is "
+        clauses.append(
+            f"{meter.surface_string_bare()} is an additive meter: a bar is "
             f"{' plus '.join(str(term) for term in meter.terms)}, "
             f"{meter.units_per_bar} {_unit_name(meter.unit)}s in total."
         )
-    return contract
+    return "\n".join(clauses)
 
 
 def _unit_name(denominator: int) -> str:
