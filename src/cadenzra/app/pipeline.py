@@ -125,7 +125,9 @@ def plan_structure(state: PipelineState, services: LayerServices) -> PipelineSta
 
     plan = _converge(
         generate,
-        lambda candidate: validate_structure(candidate, state.spec),
+        lambda candidate: validate_structure(
+            candidate, state.spec, style.parallel_fifths_policy
+        ),
         budget=services.budgets.structure,
         loop_key=attempt_key("structure", None, None),
         what="the plan",

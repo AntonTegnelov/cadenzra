@@ -21,13 +21,16 @@ SOURCE: Final = "validate_structure"
 DURATION_TOLERANCE: Final = 0.25
 
 
-def validate_structure(plan: StructurePlan, spec: PieceSpec) -> list[FeedbackItem]:
+def validate_structure(
+    plan: StructurePlan, spec: PieceSpec, parallel_policy: str = "forbid"
+) -> list[FeedbackItem]:
     """Check the formal plan. An empty list means it is accepted."""
     return [
         *_check_meters_allowed(plan, spec),
         *_check_voices_resolve(plan, spec),
         *_check_duration(plan, spec),
         *_check_material(plan, spec),
+        *_check_simultaneous_doubling(plan, parallel_policy),
     ]
 
 
@@ -220,3 +223,37 @@ def _item(
         message=message,
         evidence=evidence,
     )
+def _check_simultaneous_doubling(
+    plan: StructurePlan, parallel_policy: str
+) -> list[FeedbackItem]:
+    """The same motif entered in two voices at the same bar, under "forbid".
+
+    Identical simultaneous statements move in parallel octaves by
+    construction, whatever the motif looks like — a motif loop burned 8/8
+    identical attempts on "reshape one of the two" when both were the same
+    line. Arithmetic on the plan alone, caught where the plan can fix it.
+    """
+    if parallel_policy != "forbid":
+        return []
+    feedback = []
+    for section in plan.sections:
+        starts: dict[tuple[str, int], str] = {}
+        for entry in section.material:
+            key = (entry.motif_id, entry.bar)
+            if key in starts and starts[key] != entry.voice_id:
+                feedback.append(
+                    _item(
+                        section.section_id,
+                        message=(
+                            f"section {section.section_id} enters "
+                            f"{entry.motif_id!r} simultaneously in "
+                            f"{starts[key]} and {entry.voice_id} at bar "
+                            f"{entry.bar}: identical lines move in parallel "
+                            "octaves by construction, and this style forbids "
+                            "them — stagger the entries by a bar or more, or "
+                            "give one voice a different subject"
+                        ),
+                    )
+                )
+            starts.setdefault(key, entry.voice_id)
+    return feedback

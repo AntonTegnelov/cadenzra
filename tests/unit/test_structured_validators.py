@@ -369,6 +369,40 @@ def test_a_fragment_carrying_structural_commands_is_rejected_by_the_pack_check()
     assert "\\clef" in feedback[0].message
 
 
+def test_the_same_motif_entered_twice_at_once_is_rejected_under_forbid() -> None:
+    """A motif loop burned 8/8 identical attempts on "S2 (violin1) and S2
+    (viola) move in parallel octaves — reshape one of the two": impossible,
+    because both are the same line. Identical simultaneous statements are
+    parallel by construction whatever the motif looks like, so under a
+    forbidding policy the plan owns the fault, at plan time."""
+    plan = _plan(
+        _section(
+            material=[
+                MaterialEntry(
+                    motif_id="subject", voice_id="soprano", bar=1, relation="exact"
+                ),
+                MaterialEntry(
+                    motif_id="subject", voice_id="bass", bar=1, relation="exact"
+                ),
+            ]
+        ),
+        materials_needed=[
+            MaterialBrief(motif_id="subject", role="fugue subject", description="")
+        ],
+    )
+
+    feedback = validate_structure(plan, _spec(), parallel_policy="forbid")
+
+    assert any(
+        "parallel" in item.message and "stagger" in item.message
+        for item in feedback
+    )
+    permissive = validate_structure(plan, _spec(), parallel_policy="allow")
+    assert not any("stagger" in item.message for item in permissive), (
+        "deliberate doubling under a permissive policy is a choice, not a fault"
+    )
+
+
 def test_a_dynamics_target_outside_the_section_is_rejected() -> None:
     """A target at bar 99 of an 8-bar section used to sail through to the
     performance curves; bars are section-local everywhere."""
