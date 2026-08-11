@@ -16,8 +16,12 @@ from cadenzra.rendering.fluidsynth import DEFAULT_SOUNDFONT
 # Gemini backs every LLM role in v1. The protocol layer is what keeps that a
 # wiring choice rather than an architectural one: adding another provider is a
 # client plus a service plus one line in the factory (docs/06).
-DEFAULT_GENERATION_MODEL: Final = "gemini-3.6-flash"
-DEFAULT_CRITIC_MODEL: Final = "gemini-3.6-flash"
+# The cheapest tier is the fallback on purpose: a run that silently rides a
+# stronger model is a run that silently rides a pricier one (a burned monthly
+# spending cap found the old gemini-3.6-flash default). Escalating any
+# capability is an explicit .env decision, never an accident of a missing one.
+DEFAULT_GENERATION_MODEL: Final = "gemini-3.1-flash-lite"
+DEFAULT_CRITIC_MODEL: Final = "gemini-3.1-flash-lite"
 
 
 class ModelPrice(BaseModel, frozen=True):

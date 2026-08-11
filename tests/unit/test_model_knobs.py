@@ -62,6 +62,19 @@ def test_a_typo_in_a_capability_name_fails_loudly() -> None:
         build_generator(_config(capability_models={"describe_styel": "m"}))
 
 
+def test_the_default_models_are_the_cheap_tier() -> None:
+    """Dev runs gemini-3.1-flash-lite only (standing directive). The code
+    default is the fallback when .env says nothing — and a silent fallback
+    to a stronger model is a silent fallback to a pricier one, discovered
+    as a burned spending cap. Escalation is an explicit .env decision.
+    Asserted on the constants, not a built config: RunConfig reads .env,
+    which would mask a wrong fallback on any machine that has one."""
+    from cadenzra.app.config import DEFAULT_CRITIC_MODEL, DEFAULT_GENERATION_MODEL
+
+    assert DEFAULT_GENERATION_MODEL == "gemini-3.1-flash-lite"
+    assert DEFAULT_CRITIC_MODEL == "gemini-3.1-flash-lite"
+
+
 def test_default_budgets_absorb_the_weak_tier() -> None:
     """Development runs everything on the cheapest model, whose correction
     rate is priced in — the loops that empirically needed more room (motifs,
