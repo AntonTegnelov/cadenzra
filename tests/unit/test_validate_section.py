@@ -77,26 +77,25 @@ def test_clean_counterpoint_is_accepted() -> None:
 
 
 def test_parallel_fifths_are_caught_and_located() -> None:
-    """Both voices are free here, so each is told — the double-fugue autopsy
-    found the alphabetical single-target routing starved half of every pair of
-    its feedback."""
+    """One fault, one moving line. Both-told routing was the fix for repairs
+    against stale snapshots; with sequential repairs the second telling only
+    doubled the churn — every pair edited both its voices per sweep, and the
+    sweep equilibrium sat at ~70 faults while repairs re-injected as many
+    parallels as they fixed. The un-told voice anchors."""
     voices = _voices(soprano=[curr for curr in (67, 69)], bass=[60, 62])
 
     feedback = validate_section(voices, _section(), NO_HARMONY, _style())
 
-    assert len(feedback) == 2
-    assert {item.voice_id for item in feedback} == {"soprano", "bass"}
-    for item in feedback:
-        assert "parallel fifths" in item.message
-        assert "bar 1, beat 2" in item.message
-        assert item.level == "section"
-        assert item.section_id == "A"
-        assert item.kind == "parallels"
-        assert item.voices == ("bass", "soprano")
-        assert item.routing == "both-free"
-    assert len({item.fingerprint() for item in feedback}) == 1, (
-        "one fault, routed twice — not two faults"
-    )
+    assert len(feedback) == 1
+    (item,) = feedback
+    assert item.voice_id == "soprano", "deterministic: the later-sorted voice moves"
+    assert "parallel fifths" in item.message
+    assert "bar 1, beat 2" in item.message
+    assert item.level == "section"
+    assert item.section_id == "A"
+    assert item.kind == "parallels"
+    assert item.voices == ("bass", "soprano")
+    assert item.routing == "both-free"
 
 
 def test_parallel_octaves_are_caught() -> None:
@@ -104,7 +103,7 @@ def test_parallel_octaves_are_caught() -> None:
 
     feedback = validate_section(voices, _section(), NO_HARMONY, _style())
 
-    assert len(feedback) == 2
+    assert len(feedback) == 1
     assert all("parallel octaves" in item.message for item in feedback)
 
 
@@ -117,7 +116,7 @@ def test_a_run_of_parallels_is_one_fault_not_one_per_beat() -> None:
 
     feedback = validate_section(voices, _section(bars=2), NO_HARMONY, _style())
 
-    assert len(feedback) == 2, "one item per routed voice, not per attack"
+    assert len(feedback) == 1, "one passage, one routed voice, not one per attack"
     item = feedback[0]
     assert "through" in item.message, "the message names the passage's extent"
     assert item.span is not None

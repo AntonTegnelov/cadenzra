@@ -210,12 +210,15 @@ def _routed_pair_items(
     section: SectionPlan,
     spans: dict[VoiceId, list[tuple[Fraction, Fraction]]],
 ) -> list[FeedbackItem]:
-    """One passage's items, routed to whoever is actually free to move.
+    """One passage's item, routed to the one voice that will move.
 
     A voice inside a prescribed entry span cannot change without failing the
     entry check — telling it to is how the double-fugue loop oscillated
-    between two validators. One voice free: it gets the item. Both free: both
-    are told (each sees the other's line on repair). Neither: the item is
+    between two validators. One voice free: it gets the item. Both free: the
+    later-sorted voice gets it and the other anchors — both-told routing
+    doubled the churn once repairs became sequential, editing every pair's
+    two voices per sweep until re-injected parallels matched the fixes (a
+    live sweep equilibrium of ~70 faults). Neither free: the item is
     voiceless and `routing="unfixable"` — the plan owns that contradiction,
     and the section loop escalates it rather than spending budget.
     """
@@ -253,7 +256,7 @@ def _routed_pair_items(
         return [routed(None, "unfixable")]
     if upper_fixed or lower_fixed:
         return [routed(lower_name if upper_fixed else upper_name, "only-free-voice")]
-    return [routed(voice, "both-free") for voice in pair]
+    return [routed(pair[1], "both-free")]
 
 
 def _simultaneous_pairs(
