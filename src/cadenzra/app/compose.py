@@ -884,12 +884,25 @@ def _lyrics_to_convergence(
             # One nudge, not a budget: whether a device landed is a judgment,
             # and spending every attempt on a judgment call would starve the
             # checks that are actually decidable.
-            advisory = (
-                _observe_devices(services, lyrics, directive, section)
-                + _review_craft(services, lyrics, section)
-                if attempt == 1
-                else []
-            )
+            try:
+                advisory = (
+                    _observe_devices(services, lyrics, directive, section)
+                    + _review_craft(services, lyrics, section)
+                    if attempt == 1
+                    else []
+                )
+            except LLMOutputError as error:
+                # The advisory pass is one nudge on a judgment call. A
+                # malformed judgment is not worth an attempt, and letting it
+                # escape crashed the whole lyric loop over words every
+                # decidable check had already accepted.
+                _log.warning(
+                    "the advisory review for section %s came back malformed; "
+                    "accepting the validated words: %s",
+                    section.section_id,
+                    error,
+                )
+                advisory = []
             if not advisory:
                 return lyrics
             feedback = advisory

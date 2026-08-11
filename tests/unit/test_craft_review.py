@@ -158,6 +158,30 @@ def test_the_review_fires_once_and_never_exhausts_the_budget(tmp_path: Path) -> 
     assert len(generator.reviews) == 1, "one blinded question, not a budget"
 
 
+def test_a_malformed_advisory_reply_accepts_the_validated_words(
+    tmp_path: Path,
+) -> None:
+    """The advisory pass is one nudge on a judgment call; its calls used to
+    sit outside the loop's try/except, so a malformed give_verdict reply
+    crashed the whole lyric loop over words every decidable check had
+    already accepted. A malformed judgment is worth nothing, not a crash."""
+    from cadenzra.common.errors import LLMOutputError
+
+    class _MalformedReview(ScriptedGenerator):
+        def review(self, request: object) -> ReviewVerdict:
+            raise LLMOutputError("the reply carried no give_verdict call")
+
+    generator = _MalformedReview(
+        lyrics={"A": _scripted_lyrics("the walk walks on")},
+        observations=[DeviceObservation(device="polyptoton", lines=[1])],
+    )
+
+    result = _converge(generator, tmp_path)
+
+    assert result.section_id == "A", "the validated words are accepted"
+    assert len(generator.lyrics_contexts) == 1, "no attempt was spent on it"
+
+
 def test_an_acceptable_verdict_ends_the_section_in_one_attempt(tmp_path: Path) -> None:
     generator = ScriptedGenerator(
         lyrics={"A": _scripted_lyrics("the walk walks on")},
