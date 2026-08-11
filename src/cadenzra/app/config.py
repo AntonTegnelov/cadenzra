@@ -53,12 +53,16 @@ class RetryBudgets(BaseSettings):
     are cheap — a re-render, not a regeneration (docs/02).
     """
 
+    # The loops that write notation get more room by default: the dev tier
+    # runs the weakest model, whose higher correction rate is priced in, and
+    # an extra lite-tier attempt costs pennies while a budget_exhausted run
+    # costs a resume.
     structure: int = 3
-    motifs: int = 3
+    motifs: int = 8
     harmony: int = 3
     lyric_plan: int = 3
-    lyric: int = 3
-    voice: int = 3
+    lyric: int = 6
+    voice: int = 6
     section: int = 3
     score: int = 3
     critique: int = 1

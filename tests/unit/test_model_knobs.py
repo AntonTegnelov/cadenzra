@@ -60,3 +60,16 @@ def test_two_capabilities_on_one_cheap_model_share_a_client() -> None:
 def test_a_typo_in_a_capability_name_fails_loudly() -> None:
     with pytest.raises(CadenzraError, match="describe_styel"):
         build_generator(_config(capability_models={"describe_styel": "m"}))
+
+
+def test_default_budgets_absorb_the_weak_tier() -> None:
+    """Development runs everything on the cheapest model, whose correction
+    rate is priced in — the loops that empirically needed more room (motifs,
+    voices, lyrics) carry it by default rather than via ad-hoc env knobs."""
+    from cadenzra.app.config import RetryBudgets
+
+    budgets = RetryBudgets()
+
+    assert budgets.motifs == 8
+    assert budgets.voice == 6
+    assert budgets.lyric == 6
