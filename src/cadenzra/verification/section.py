@@ -147,10 +147,13 @@ def _check_parallels(
         return []
 
     feedback = []
+    beat = section.meter.bar_length / section.meter.units_per_bar
     names = sorted(voices)
     for upper_index, upper in enumerate(names):
         for lower in names[upper_index + 1 :]:
-            for interval, onsets in parallel_runs(voices[upper], voices[lower]):
+            for interval, onsets in parallel_runs(
+                voices[upper], voices[lower], beat=beat
+            ):
                 feedback += _routed_pair_items(
                     upper, lower, interval, onsets, section, spans
                 )
@@ -158,7 +161,7 @@ def _check_parallels(
 
 
 def parallel_runs(
-    upper: list[NoteEvent], lower: list[NoteEvent]
+    upper: list[NoteEvent], lower: list[NoteEvent], *, beat: Fraction
 ) -> list[tuple[str, list[Fraction]]]:
     """Maximal passages of parallel motion, as (interval, onsets) runs.
 
@@ -166,8 +169,18 @@ def parallel_runs(
     parallel run into four violations, which is how a repair prompt ends up
     carrying 45 complaints for nine problems (the cost audit measured 207
     events collapsing to ~44 passages).
+
+    Judged between attacks that land on beats: a passing eighth's coincidence
+    is diminution, not voice-leading — 61 of a live run's 101 parallel items
+    involved sub-beat attacks. The same definitional scoping "held" carries.
+    A genuine parallel eighth-run still lands its fifths on consecutive
+    beats, and is still caught.
     """
-    pairs = _simultaneous_pairs(upper, lower)
+    pairs = [
+        pair
+        for pair in _simultaneous_pairs(upper, lower)
+        if pair[0].onset % beat == 0
+    ]
     runs: list[tuple[str, list[Fraction]]] = []
     current: list[Fraction] = []
     current_interval = ""

@@ -192,7 +192,10 @@ def _check_entry_collisions(
         for (first, first_notes), (second, second_notes) in combinations(placed, 2):
             if first.voice_id == second.voice_id:
                 continue
-            for interval, onsets in parallel_runs(first_notes, second_notes):
+            beat = section.meter.bar_length / section.meter.units_per_bar
+            for interval, onsets in parallel_runs(
+                first_notes, second_notes, beat=beat
+            ):
                 feedback.append(
                     _item(
                         first.motif_id,

@@ -158,12 +158,12 @@ def test_a_motif_with_no_whole_octave_fit_is_rejected(tmp_path: Path) -> None:
 def test_entries_collide_at_the_register_the_prescription_chooses(
     tmp_path: Path,
 ) -> None:
-    """A live stretto slipped through: at written pitch the two S1 statements
-    move in fourths, but the prescription lifts the violin an octave to clear
-    its G3 floor, and fourths inverted become fifths. The collision check
-    must place each entry where the prescription will — the same
-    whole-octave arithmetic — or it clears plans the assembly then rejects
-    with no voice free to fix."""
+    """A live stretto slipped through: at written pitch the two subjects move
+    in fourths, but the prescription lifts the violin an octave to clear its
+    G3 floor, and fourths inverted become fifths. The collision check must
+    place each entry where the prescription will — the same whole-octave
+    arithmetic — or it clears plans the assembly then rejects with no voice
+    free to fix."""
     violin1 = VoiceSpec(
         voice_id="violin1",
         kind="instrument",
@@ -195,19 +195,23 @@ def test_entries_collide_at_the_register_the_prescription_chooses(
                         motif_id="s1", voice_id="violin1", bar=1, relation="exact"
                     ),
                     MaterialEntry(
-                        motif_id="s1", voice_id="viola", bar=2, relation="exact"
+                        motif_id="s2", voice_id="viola", bar=1, relation="exact"
                     ),
                 ],
             )
         ]
     )
+    # s1 written D3-G3 sits below the violin's floor, so its prescription is
+    # lifted an octave; the viola's line needs no lift. At written pitch the
+    # pair moves in fourths — only the lifted register makes them fifths.
     library = MotifLibrary(
         motifs={
             "s1": Motif(
-                motif_id="s1",
-                role="subject",
-                lily_music="c'4. g8 c'4 bes8 g | aes4 f8 d g4 c' |",
-            )
+                motif_id="s1", role="subject", lily_music="d4 e4 f4 g4 |"
+            ),
+            "s2": Motif(
+                motif_id="s2", role="subject", lily_music="g4 a4 b4 c'4 |"
+            ),
         }
     )
 

@@ -144,6 +144,49 @@ def test_a_repeated_fifth_is_not_a_parallel() -> None:
     assert validate_section(voices, _section(), NO_HARMONY, _style()) == []
 
 
+def test_parallels_are_judged_between_beats_not_ornaments() -> None:
+    """61 of a live run's 101 parallel items involved sub-beat attacks —
+    passing eighths whose coincidence is diminution, not voice-leading. The
+    rule is judged between attacks that land on beats, the same definitional
+    scoping "held" got: a genuine parallel eighth-run still lands fifths on
+    consecutive beats and is still caught."""
+    from fractions import Fraction as F
+
+    def _line(notes: list[tuple[int, F, F]]) -> list[NoteEvent]:
+        return [
+            NoteEvent(
+                midi_pitch=pitch, onset=onset, duration=dur, velocity=90, channel=0
+            )
+            for pitch, onset, dur in notes
+        ]
+
+    eighth, quarter = F(1, 8), F(1, 4)
+    four_four = simple_meter(4, 4)
+    # Off-beat slip: a fourth on the beat, fifths only at the off-beat and the
+    # next beat — one ornamental coincidence, not a parallel pair of beats.
+    slip_upper = _line([(65, F(0), eighth), (69, eighth, eighth), (71, quarter, quarter)])
+    slip_lower = _line([(60, F(0), eighth), (62, eighth, eighth), (64, quarter, quarter)])
+    # True parallel run: fifths on consecutive beats, eighths in between.
+    run_upper = _line([(67, F(0), eighth), (69, eighth, eighth), (71, quarter, quarter)])
+    run_lower = _line([(60, F(0), eighth), (62, eighth, eighth), (64, quarter, quarter)])
+
+    slip = validate_section(
+        {"soprano": slip_upper, "bass": slip_lower},
+        _section(meter=four_four),
+        NO_HARMONY,
+        _style(),
+    )
+    caught = validate_section(
+        {"soprano": run_upper, "bass": run_lower},
+        _section(meter=four_four),
+        NO_HARMONY,
+        _style(),
+    )
+
+    assert slip == [], "an off-beat coincidence is diminution"
+    assert len(caught) == 1 and caught[0].kind == "parallels"
+
+
 def test_a_sustained_clash_against_the_chord_is_flagged() -> None:
     """Eb held over a C major chord is a minor third against a major one —
     the kind of bite no extension explains away."""
