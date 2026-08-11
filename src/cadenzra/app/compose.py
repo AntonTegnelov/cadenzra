@@ -535,6 +535,7 @@ def _voice_to_convergence(
     """
     voice_spec = state.spec.voices_by_id[voice_id]
     materials = _materials_for(state, section, voice_id, motif_events)
+    tail = _previous_tail(state, section, voice_id)
     feedback = _entry_aware(list(prior or []), section, materials)
     rejected: VoicePart | None = (
         state.voices.get(voice_key(section.section_id, voice_id)) if prior else None
@@ -581,7 +582,8 @@ def _voice_to_convergence(
                         style=state.style,  # type: ignore[arg-type]
                         skeleton=state.harmony.get(section.section_id),
                         materials=materials,
-                        previous_tail=_previous_tail(state, section, voice_id),
+                        previous_tail=tail[0] if tail else None,
+                        previous_meter=tail[1] if tail else None,
                         rejected=rejected,
                         feedback=feedback,
                         siblings=siblings or {},
@@ -1055,19 +1057,21 @@ def _prescribed_entry(
 
 def _previous_tail(
     state: PipelineState, section: SectionPlan, voice_id: VoiceId
-) -> str | None:
-    """The last few bars this voice sang, so its line connects across the seam."""
+) -> tuple[str, MeterSpec] | None:
+    """The last few bars this voice sang, and the meter they were written in,
+    so its line connects across the seam without teaching the old bar length
+    by example."""
     plan = state.structure
     assert plan is not None
     order = [item.section_id for item in plan.sections]
     index = order.index(section.section_id)
-    for previous in reversed(order[:index]):
-        part = state.voices.get(voice_key(previous, voice_id))
+    for previous in reversed(plan.sections[:index]):
+        part = state.voices.get(voice_key(previous.section_id, voice_id))
         if part is not None:
             # `split_bars`, not a naive split("|"): a quoted `\bar "|:"` would
             # shift a naive count and hand the model the wrong bars.
             bars = split_bars(part.lily_music)
-            return "".join(bars[-_SLIDING_WINDOW_BARS:]).strip()
+            return "".join(bars[-_SLIDING_WINDOW_BARS:]).strip(), previous.meter
     return None
 
 

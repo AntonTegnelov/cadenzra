@@ -215,6 +215,51 @@ def test_superseded_feedback_is_cleared_when_its_target_regenerates(
     assert result["feedback"] == [other]
 
 
+def test_the_previous_tail_arrives_with_the_meter_it_was_written_in(
+    tmp_path: Path,
+) -> None:
+    """The tail's meter is the *source* section's, found by the same walk that
+    finds the tail — a voice silent in the section just before must get the
+    meter of the section its tail actually came from."""
+    from cadenzra.app.compose import ComposeServices, _voice_to_convergence
+    from cadenzra.model.voice import VoicePart
+
+    four_four = simple_meter(4, 4)
+    first = SECTION.model_copy(update={"section_id": "A", "meter": four_four})
+    silent = SECTION.model_copy(update={"section_id": "B", "active_voices": []})
+    last = SECTION.model_copy(update={"section_id": "C"})
+    state = _state(
+        spec=PieceSpec(
+            title="T",
+            style_prompt="s",
+            voices=[ALTO],
+            meters_allowed=[four_four, SEVEN_EIGHT],
+            target_minutes=1.0,
+        ),
+        structure=StructurePlan(sections=[first, silent, last]),
+        voices={
+            voice_key("A", "alto"): VoicePart(
+                section_id="A", voice_id="alto", lily_music="c'4 d'4 e'4 f'4 |"
+            )
+        },
+    )
+    generator = ScriptedGenerator([GOOD])
+    services = ComposeServices(
+        generator=generator,
+        renderer=RecordingRenderer([clean()]),
+        workdir=tmp_path,
+        budgets=RetryBudgets(),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+
+    _voice_to_convergence(state, services, last, "alto")
+
+    ctx = generator.contexts[0]
+    assert ctx.previous_tail == "c'4 d'4 e'4 f'4 |"
+    assert ctx.previous_meter == four_four
+
+
 def test_the_generator_receives_the_musician_facing_context(tmp_path: Path) -> None:
     generator = ScriptedGenerator([GOOD])
     graph = build_voice_graph(

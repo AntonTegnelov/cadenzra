@@ -91,8 +91,10 @@ class VoiceContext(BaseModel, frozen=True):
     skeleton: HarmonicSkeleton | None = None
     materials: list[MaterialInstruction] = Field(default_factory=list)
     # The last few bars this same voice sang in the previous section, so lines
-    # connect across boundaries.
+    # connect across boundaries — and the meter they were written in, because
+    # a tail shown without its meter teaches the old bar length by example.
     previous_tail: str | None = None
+    previous_meter: MeterSpec | None = None
     # On a regeneration: the fragment that was rejected, and why.
     rejected: VoicePart | None = None
     feedback: list[FeedbackItem] = Field(default_factory=list)

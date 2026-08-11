@@ -86,10 +86,25 @@ def build_voice_prompt(ctx: VoiceContext) -> str:
         blocks.append(material_text(instruction, ctx.section.meter))
 
     if ctx.previous_tail:
-        blocks.append(
+        tail = (
             f"The {ctx.voice.voice_id} line ended the previous section like this — "
             f"continue naturally from it:\n  {ctx.previous_tail}"
         )
+        if (
+            ctx.previous_meter is not None
+            and ctx.previous_meter != ctx.section.meter
+        ):
+            # A tail shown without this teaches the old bar length by example:
+            # longform's viola reproduced "always exactly a 4/4 bar" in 5/4,
+            # continuing three 4/4 exemplar bars labeled "continue naturally".
+            tail += (
+                f"\nThese closing bars are written in "
+                f"{ctx.previous_meter.surface_string()}; this section is in "
+                f"{ctx.section.meter.surface_string()}. Their bar lengths do "
+                f"not carry over — every bar you write must fill "
+                f"{ctx.section.meter.surface_string()} exactly."
+            )
+        blocks.append(tail)
 
     if ctx.voice.lyrics:
         blocks.append(

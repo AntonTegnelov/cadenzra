@@ -230,6 +230,26 @@ def test_a_cross_meter_entry_teaches_the_tie() -> None:
     assert "tie" not in same.lower(), "no tie lecture when the meters agree"
 
 
+def test_a_cross_meter_tail_warns_that_bar_lengths_do_not_carry_over() -> None:
+    """The longform trap's other exemplar: a previous tail written in 4/4,
+    labeled "continue naturally", teaches the model to keep writing 4/4 bars
+    inside 5/4 — and nothing ever said the meters differ. The warning appears
+    only when they do."""
+    tail = "g'4 a'4 b'4 c''4 |"
+
+    cross = build_voice_prompt(
+        _ctx(previous_tail=tail, previous_meter=simple_meter(4, 4))
+    )  # SECTION is 7/8
+    same = build_voice_prompt(
+        _ctx(previous_tail="a'8 a' b' b' c''4. |", previous_meter=SEVEN_EIGHT)
+    )
+
+    assert "written in 4/4" in cross
+    assert "do not carry over" in cross
+    assert "7/8 (2+2+3)" in cross
+    assert "do not carry over" not in same, "no warning when the meters agree"
+
+
 def test_a_motif_travels_as_notation_with_an_instruction_not_an_id() -> None:
     """The id is bookkeeping for validators; the notes are for the composer
     (docs/03)."""
