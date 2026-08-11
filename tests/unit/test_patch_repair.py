@@ -906,3 +906,34 @@ def test_bar_probe_declines_what_it_cannot_represent_exactly() -> None:
         "a final bar missing its check cannot be told apart from trailing "
         "overflow of the bar before it"
     )
+
+
+def test_a_streak_of_malformed_patches_falls_back_to_a_full_rewrite(
+    tmp_path: Path,
+) -> None:
+    """Metal, live: four consecutive malformed patch declarations for the
+    same 11/8 bar (15/8, 13/8, 3/2, 15/8) burned the budget without the
+    music ever changing — the third run killed this way. One malformed
+    patch stays a free retry (the sibling test above pins why), but from
+    the second consecutive one on, each counts as a patch strike, so the
+    loop reaches its full-rewrite fallback while budget remains."""
+
+    class _AlwaysMalformed(ScriptedGenerator):
+        def patch_voice(self, ctx: PatchContext) -> dict[int, str]:
+            self.patch_contexts.append(ctx)
+            raise LLMOutputError("the replacement for bar 1 declares durations summing to 15/8")
+
+    generator = _AlwaysMalformed([GOOD])
+    renderer = RecordingRenderer([clean()])
+    services = _loop_services(generator, renderer, tmp_path)
+    section = _loop_section()
+
+    part = _voice_to_convergence(
+        _loop_state(section), services, section, "alto", prior=[_bar_scoped_item()]
+    )
+
+    assert len(generator.patch_contexts) == 3, (
+        "one free retry, then two strikes — no fourth patch call"
+    )
+    assert generator.calls == 1, "the fallback full rewrite finished the job"
+    assert part.lily_music.strip() == GOOD

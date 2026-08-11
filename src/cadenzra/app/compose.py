@@ -613,6 +613,7 @@ def _voice_to_convergence(
     standing = rejected
     deferrable: VoicePart | None = None
     patch_attempts = 0
+    malformed_streak = 0
     offered: set[int] = set()  # bars ever offered against the current part text
     parser_note: list[FeedbackItem] = []  # a rejected patch's own diagnosis
     attempt = 0
@@ -698,6 +699,17 @@ def _voice_to_convergence(
             # cross-voice violations pour in.
             if patching:
                 attempt += 1
+                # One malformed patch is a wasted call, not evidence that
+                # patching cannot fix this part (counting the first as a
+                # strike once funneled repairs into rewrites that poured in
+                # fresh cross-voice faults). A *streak* is evidence: four
+                # consecutive unparseable declarations for one 11/8 bar
+                # burned a live budget without the music ever changing, so
+                # from the second consecutive malformed patch on, each one
+                # is a strike toward the full-rewrite fallback.
+                malformed_streak += 1
+                if malformed_streak >= 2:
+                    patch_attempts += 1
                 parser_note = _malformed(
                     "voice", section.section_id, voice_id, error
                 )
@@ -714,6 +726,7 @@ def _voice_to_convergence(
             continue
 
         parser_note = []
+        malformed_streak = 0
         feedback = _entry_aware(
             validate_voice(
                 part,

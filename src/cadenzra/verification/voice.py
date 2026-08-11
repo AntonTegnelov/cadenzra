@@ -443,8 +443,10 @@ def _both_spellings(pitch: Pitch, section: SectionPlan) -> str:
     alt = Pitch.from_midi_number(pitch.midi_number, prefer_flats=not flats)
     if alt.to_lilypond() == pitch.to_lilypond():
         return f"{pitch.to_scientific()} ({pitch.to_lilypond()})"
+    # No comma after the token: octave marks are commas, and "(dis,, perhaps"
+    # reads as a different note.
     return (
-        f"{pitch.to_scientific()} ({pitch.to_lilypond()}, perhaps written "
+        f"{pitch.to_scientific()} (written {pitch.to_lilypond()} or "
         f"{alt.to_lilypond()})"
     )
 
