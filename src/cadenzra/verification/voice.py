@@ -32,6 +32,7 @@ from cadenzra.notation.scaffold import (
     ScaffoldedSource,
     bar_of_fragment_position,
     count_bar_checks,
+    scaffold_bar_probe,
     scaffold_fragment,
 )
 from cadenzra.rendering.lilypond import first_error
@@ -111,7 +112,9 @@ def validate_voice(
 
     feedback = [
         *_check_bar_checks_present(part, section),
-        *_check_bars_fill_the_meter(part, section, scaffolded, result.bar_check_warnings),
+        *_check_bars_fill_the_meter(
+            part, section, scaffolded, result.bar_check_warnings, renderer, workdir
+        ),
         *_check_lyrics_align(part, section, result.raw_output),
         *_check_techniques(part, section),
     ]
@@ -176,31 +179,87 @@ def _check_bars_fill_the_meter(
     section: SectionPlan,
     scaffolded: ScaffoldedSource,
     warnings: list[BarCheckWarning],
+    renderer: ScoreRenderer,
+    workdir: Path,
 ) -> list[FeedbackItem]:
     """Turn the compiler's bar checks into rehearsal notes.
 
     The compiler does the duration arithmetic; this only says where, and by how
-    much (docs/03).
+    much (docs/03). A failed bar check desynchronizes the compiler's measure
+    position, so the single compile reports only the first of a run of broken
+    bars — a live part with twelve identical overfull bars was taught about
+    them one attempt at a time. When any check fails, each bar is recompiled
+    as its own score so every broken bar is named at once; where the probe
+    cannot represent or confirm the fragment, this compile's report stands.
     """
+    if not warnings:
+        return []
+    probed = _probed_bar_faults(part, section, renderer, workdir)
+    if probed is not None:
+        return probed
     feedback = []
     for warning in warnings:
         line = scaffolded.fragment_line_of(warning.line)
         bar = bar_of_fragment_position(part.lily_music, line, warning.column)
-        deficit = deficit_text(warning.message, section.meter)
         feedback.append(
-            _item(
-                part,
-                section,
-                bar=bar,
-                message=(
-                    f"bar {bar} does not fill {section.meter.surface_string()}"
-                    + (f"; it is {deficit}" if deficit else "")
-                    + " — adjust the durations or retie across the barline"
-                ),
-                evidence=warning.message,
-            )
+            _bar_fill_item(part, section, bar=bar, warning=warning)
         )
     return feedback
+
+
+def _probed_bar_faults(
+    part: VoicePart,
+    section: SectionPlan,
+    renderer: ScoreRenderer,
+    workdir: Path,
+) -> list[FeedbackItem] | None:
+    """Every broken bar, from a per-bar recompile — None where unconfirmed.
+
+    None means "keep the single compile's report": the probe declined the
+    fragment, a bar could not compile standing alone (cut mid-tuplet), or
+    the probe's warnings did not line up with its own scores. All of those
+    are external-compiler territory, and the degraded report is the same
+    first-broken-bar answer the validator gave before the probe existed.
+    """
+    probe = scaffold_bar_probe(part.lily_music, section.meter)
+    if probe is None:
+        return None
+    try:
+        result = renderer.compile(probe.source, workdir / "bars")
+    except LilypondCompileError:
+        return None
+    feedback = []
+    seen: set[int] = set()
+    for warning in result.bar_check_warnings:
+        bar = probe.bar_of_line.get(warning.line)
+        if bar is None:
+            return None
+        if bar in seen:
+            continue
+        seen.add(bar)
+        feedback.append(_bar_fill_item(part, section, bar=bar, warning=warning))
+    return feedback or None
+
+
+def _bar_fill_item(
+    part: VoicePart,
+    section: SectionPlan,
+    *,
+    bar: int,
+    warning: BarCheckWarning,
+) -> FeedbackItem:
+    deficit = deficit_text(warning.message, section.meter)
+    return _item(
+        part,
+        section,
+        bar=bar,
+        message=(
+            f"bar {bar} does not fill {section.meter.surface_string()}"
+            + (f"; it is {deficit}" if deficit else "")
+            + " — adjust the durations or retie across the barline"
+        ),
+        evidence=warning.message,
+    )
 
 
 def overflow_of(message: str) -> str | None:

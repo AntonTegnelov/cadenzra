@@ -98,6 +98,27 @@ def test_an_overfilled_bar_is_rejected_and_names_its_bar(
     assert "7/8 (2+2+3)" in item.message
 
 
+def test_every_broken_bar_is_reported_not_just_the_first(
+    renderer: LilypondAdapter, tmp_path: Path
+) -> None:
+    """A failed bar check desynchronizes the compiler's measure position, so
+    a single compile reports only the first of a run of broken bars. A live
+    part with twelve identical overfull bars was taught about them one
+    attempt at a time and ran out of budget mid-lesson; the validator must
+    name every broken bar at once."""
+    music = (
+        "a'8 a'8 b'8 b'8 c''4. c''8 |\n"
+        "g'8 g'8 a'8 a'8 b'4. b'8 |\n"
+        "a'8 a'8 b'8 b'8 c''4. c''8 |"
+    )  # every bar is 8/8 in 7/8 — 1/8 over
+
+    feedback = _check(music, renderer, tmp_path, bars=3)
+
+    named = {bar for bar in (1, 2, 3) for item in feedback if f"bar {bar} " in item.message}
+    assert named == {1, 2, 3}, [item.message for item in feedback]
+    assert all("1/8 over" in item.message for item in feedback)
+
+
 def test_an_underfilled_bar_is_rejected_and_told_the_deficit(
     renderer: LilypondAdapter, tmp_path: Path
 ) -> None:

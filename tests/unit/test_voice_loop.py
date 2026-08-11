@@ -128,8 +128,16 @@ def test_the_regeneration_sees_the_rejected_fragment_and_its_feedback(
 
 def test_each_attempt_spends_the_budget_for_its_own_loop_key(tmp_path: Path) -> None:
     generator = ScriptedGenerator([BAD, BAD, GOOD])
+    # Each failing compile triggers a per-bar probe compile; its clean
+    # verdict means "unconfirmed" and the main report stands.
     renderer = RecordingRenderer(
-        [failing_bar_check(line=9), failing_bar_check(line=9), clean()]
+        [
+            failing_bar_check(line=9),
+            clean(),
+            failing_bar_check(line=9),
+            clean(),
+            clean(),
+        ]
     )
     graph = build_voice_graph(_services(generator, renderer, tmp_path), "A", "alto")
 

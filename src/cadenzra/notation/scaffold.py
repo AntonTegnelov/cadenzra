@@ -11,6 +11,7 @@ should exist once. Both forms below were confirmed against LilyPond 2.26:
 what 2.26 calls the additive meter (`\\compoundMeter` was renamed away).
 """
 
+import re
 from typing import Final
 
 from pydantic import BaseModel
@@ -95,6 +96,58 @@ def scaffold_fragment(
         source="\n".join([*header, *fragment_lines, *footer]),
         first_fragment_line=len(header) + 1,
     )
+
+
+class BarProbe(BaseModel, frozen=True):
+    """One tiny score per bar, so every bar's check fires independently.
+
+    A failed bar check desynchronizes the compiler's measure position, so a
+    single compile reports only the first of a run of broken bars — a live
+    part with twelve identical overfull bars was taught about them one
+    attempt at a time. Compiled bar by bar, each check is independent.
+    `bar_of_line` maps a warning's source line back to the 1-based bar.
+    """
+
+    source: str
+    bar_of_line: dict[int, int]
+
+
+# The first sounding token of a bar, and whether a duration digit rides on
+# it. A token scan, not a parser: one letter (note or rest), its accidental
+# and octave marks, then optionally digits. The lookbehind keeps letters
+# inside command words (\tuplet, \grace, \ff) from matching.
+_FIRST_NOTE = re.compile(r"(?<![A-Za-z\\])[a-grs](?:es|is)*[,']*(?P<duration>\d+)?")
+
+
+def scaffold_bar_probe(lily_music: str, meter: MeterSpec) -> BarProbe | None:
+    """The fragment recompiled bar by bar — or None where that is not exact.
+
+    Conservative by design: the probe must reproduce the compiler's own
+    arithmetic, so anything that would change meaning in isolation — a
+    comment or quoted text surviving the line collapse, a bar whose first
+    note inherits its duration from the previous bar (an isolated score
+    would default it to a quarter), a final bar missing the check that
+    would separate it from its neighbour — returns None, and the caller
+    keeps the single compile's report instead.
+    """
+    if "%" in lily_music or '"' in lily_music:
+        return None
+    lines = [f'\\version "{LILYPOND_VERSION}"']
+    bar_of_line: dict[int, int] = {}
+    for number, segment in enumerate(split_bars(lily_music), start=1):
+        first_note = _FIRST_NOTE.search(segment)
+        if first_note is not None and first_note["duration"] is None:
+            return None
+        music = " ".join(segment.split())
+        if not music.endswith("|"):
+            return None
+        lines.append(
+            "\\score { \\new Voice \\absolute { "
+            f"{lily_time_command(meter)} {music}"
+            " } \\layout {} }"
+        )
+        bar_of_line[len(lines)] = number
+    return BarProbe(source="\n".join(lines) + "\n", bar_of_line=bar_of_line)
 
 
 def bar_of_fragment_line(lily_music: str, line_in_fragment: int) -> int:

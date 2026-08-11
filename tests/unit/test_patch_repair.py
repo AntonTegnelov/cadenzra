@@ -406,8 +406,16 @@ def test_two_failed_patches_fall_back_to_full_regeneration(tmp_path: Path) -> No
     """docs/04: "regeneration from scratch is the fallback when repair fails"
     — promised, never implemented until now."""
     generator = ScriptedGenerator([GOOD], patches=[{1: BAD}, {1: BAD}])
+    # A failing compile triggers a per-bar probe compile; a clean probe
+    # verdict means "unconfirmed", so the main compile's report stands.
     renderer = RecordingRenderer(
-        [failing_bar_check(line=9), failing_bar_check(line=9), clean()]
+        [
+            failing_bar_check(line=9),
+            clean(),
+            failing_bar_check(line=9),
+            clean(),
+            clean(),
+        ]
     )
     services = _loop_services(generator, renderer, tmp_path)
     section = _loop_section()
@@ -436,10 +444,14 @@ def test_a_patch_that_reveals_a_masked_bar_costs_no_attempt(tmp_path: Path) -> N
     spliced = splice_bars(first, {2: fix2})
     section = _loop_section().model_copy(update={"bars": 3})
     generator = ScriptedGenerator([first], patches=[{2: fix2}, {3: fix3}])
+    # Each failing compile is followed by a probe compile whose clean
+    # verdict leaves the main report standing.
     renderer = RecordingRenderer(
         [
             failing_bar_check(line=9, column=first.index("d'") + 1),
+            clean(),
             failing_bar_check(line=9, column=spliced.index("g'") + 1),
+            clean(),
             clean(),
         ]
     )
@@ -480,10 +492,13 @@ def test_a_patch_that_clears_some_bars_is_not_a_failed_patch(tmp_path: Path) -> 
     generator = ScriptedGenerator(
         patches=[{1: fix1, 2: still_bad}, {2: still_bad}, {2: fix2}]
     )
+    # Probe compiles (clean, so unconfirmed) follow each failing compile.
     renderer = RecordingRenderer(
         [
             failing_bar_check(line=9, column=after_one.index("d'") + 1),
+            clean(),
             failing_bar_check(line=9, column=after_one.index("d'") + 1),
+            clean(),
             clean(),
         ]
     )
@@ -833,3 +848,38 @@ def test_a_compile_failure_is_never_patched(tmp_path: Path) -> None:
 
     assert generator.patch_contexts == []
     assert generator.calls == 1
+
+
+def test_bar_probe_maps_each_score_line_to_its_bar() -> None:
+    """The probe exists so every broken bar is reported at once — its line
+    map is what turns a probe warning back into a bar number."""
+    from cadenzra.model.primitives.meter import simple_meter
+    from cadenzra.notation.scaffold import scaffold_bar_probe
+
+    probe = scaffold_bar_probe(
+        "c'4 c'4 c'4 c'4 c'4 |\nd'4 d'4 d'4 d'4 d'4 |\ne'2 e'2 e'4 |",
+        simple_meter(5, 4),
+    )
+
+    assert probe is not None
+    lines = probe.source.splitlines()
+    assert probe.bar_of_line == {2: 1, 3: 2, 4: 3}
+    assert all(lines[line - 1].startswith("\\score") for line in probe.bar_of_line)
+
+
+def test_bar_probe_declines_what_it_cannot_represent_exactly() -> None:
+    """An isolated bar whose first note inherits its duration would default
+    to a quarter and probe the wrong arithmetic; comments and quoted text
+    would not survive the line collapse. The probe declines, and the
+    validator keeps the single compile's report."""
+    from cadenzra.model.primitives.meter import simple_meter
+    from cadenzra.notation.scaffold import scaffold_bar_probe
+
+    meter = simple_meter(4, 4)
+    assert scaffold_bar_probe("c'4 c' c' c' |\nd' d' d' d' |", meter) is None
+    assert scaffold_bar_probe("c'4 c'4 c'2 | % half\nd'1 |", meter) is None
+    assert scaffold_bar_probe('c'"'"'1^"ah" |\nd'"'"'1 |', meter) is None
+    assert scaffold_bar_probe("c'1 |\nd'2 d'2", meter) is None, (
+        "a final bar missing its check cannot be told apart from trailing "
+        "overflow of the bar before it"
+    )
