@@ -672,6 +672,30 @@ def test_the_motif_prompt_asks_for_one_line_per_brief_not_one_per_voice() -> Non
     assert "not how many versions to write" in prompt
 
 
+def test_the_style_prompt_shows_a_worked_cell_per_meter() -> None:
+    """A live tool-choir run burned the whole style budget on 5/4 cells that
+    never summed to the bar — the same lesson the motif prompt already
+    learned: an instruction alone does not teach bar arithmetic; a worked
+    bar that actually fills does. One example per allowed meter, generated
+    from the meter so it always adds up."""
+    from cadenzra.llm.prompts.structured import build_style_prompt
+    from cadenzra.model.primitives.meter import simple_meter
+    from cadenzra.model.spec import PieceSpec
+
+    spec = PieceSpec(
+        title="T",
+        style_prompt="s",
+        voices=[ALTO],
+        meters_allowed=[SEVEN_EIGHT, simple_meter(5, 4, [3, 2])],
+        target_minutes=1.0,
+    )
+
+    prompt = build_style_prompt(spec)
+
+    assert "c8 c8 c8 c8 c8 c8 c8" in prompt, "a 7/8 bar that fills exactly"
+    assert "c4 c4 c4 c4 c4" in prompt, "a 5/4 bar that fills exactly"
+
+
 def test_the_motif_prompt_states_the_note_cap_up_front() -> None:
     """The 12-note cap lived only in the validator, so a live motif loop
     burned eight attempts discovering constraints one rejection at a time —

@@ -91,7 +91,13 @@ def build_style_prompt(
             "Give at least two one-bar rhythmic cells for *each* of those meters. "
             "Write them on the note c with an explicit duration on every note, and "
             "make the cells reflect how the meter is actually felt — for a 7/8 "
-            "grouped 2+2+3, the cells should land that way."
+            "grouped 2+2+3, the cells should land that way. The durations must "
+            "sum to exactly one bar. Worked bars that fill exactly — reshape "
+            "the rhythm freely, keep the total:\n"
+            + "\n".join(
+                f"  {meter.surface_string()}: {_cell_example(meter)}"
+                for meter in spec.meters_allowed
+            )
         ),
         (
             "The cells matter more than anything else here: the composer will build "
@@ -245,6 +251,20 @@ def build_motif_prompt(
     if notes:
         blocks.append(notes)
     return "\n\n".join(blocks)
+
+
+def _cell_example(meter: MeterSpec) -> str:
+    """One bar of rhythm on c that fills this meter exactly.
+
+    The style edition of `_motif_example`, for the same reason: a live run
+    burned its whole budget on 5/4 cells that never summed to the bar — an
+    instruction alone does not teach bar arithmetic; a worked bar does.
+    """
+    return " ".join(
+        f"c{term.denominator}"
+        for term in meter.terms
+        for _ in range(term.numerator)
+    )
 
 
 def _motif_example(meter: MeterSpec) -> str:
