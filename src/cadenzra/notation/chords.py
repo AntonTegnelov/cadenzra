@@ -37,6 +37,8 @@ _QUALITY_INTERVALS: Final[dict[str, tuple[int, ...]]] = {
     "o": (0, 3, 6),
     "aug": (0, 4, 8),
     "+": (0, 4, 8),
+    "aug7": (0, 4, 8, 10),
+    "+7": (0, 4, 8, 10),
     "5": (0, 7),
     "sus2": (0, 2, 7),
     "sus4": (0, 5, 7),
@@ -59,6 +61,13 @@ _QUALITY_INTERVALS: Final[dict[str, tuple[int, ...]]] = {
     # the orchestral probe asked for one.
     "9sus4": (0, 2, 5, 7, 10),
     "9sus": (0, 2, 5, 7, 10),
+    "13sus4": (0, 2, 5, 7, 9, 10),
+    "13sus": (0, 2, 5, 7, 9, 10),
+    # The altered dominant: b7 plus every altered tension. One name for a set
+    # of colorings, so the set holds all of them — the check only ever asks
+    # "is this note explained", and "alt" was asking for exactly that license.
+    "7alt": (0, 1, 3, 4, 6, 8, 10),
+    "alt": (0, 1, 3, 4, 6, 8, 10),
     "sus4add9": (0, 2, 5, 7),
     "m11": (0, 2, 3, 5, 7, 10),
     "m13": (0, 2, 3, 7, 9, 10),
@@ -97,22 +106,31 @@ class ParsedChord(BaseModel, frozen=True):
 # Alterations and added tones, as intervals above the root. Models reach for
 # these constantly ("Dm(b9)", "C7#11"), and rejecting them costs a whole
 # regeneration round trip for a chord the checker could simply have understood.
-_EXTENSIONS: Final[dict[str, int]] = {
-    "b9": 1,
-    "9": 2,
-    "#9": 3,
-    "b11": 4,
-    "11": 5,
-    "#11": 6,
-    "b13": 8,
-    "13": 9,
-    "b5": 6,
-    "#5": 8,
-    "b6": 8,
-    "6": 9,
-    "b7": 10,
-    "7": 10,
-    "maj7": 11,
+# A token may add more than one tone: "maj9" inside parens means the major
+# seventh and the ninth together, and a parenthesized suspension adds its
+# fourth (widening, like every extension here — the third stays explained).
+_EXTENSIONS: Final[dict[str, tuple[int, ...]]] = {
+    "b9": (1,),
+    "9": (2,),
+    "#9": (3,),
+    "b11": (4,),
+    "11": (5,),
+    "#11": (6,),
+    "b13": (8,),
+    "13": (9,),
+    "b5": (6,),
+    "#5": (8,),
+    "b6": (8,),
+    "6": (9,),
+    "b7": (10,),
+    "7": (10,),
+    "maj7": (11,),
+    "maj9": (11, 2),
+    "sus4": (5,),
+    "sus2": (2,),
+    "sus": (5,),
+    # "(alt)" — every altered tension at once, same set as the 7alt quality.
+    "alt": (1, 3, 6, 8),
 }
 _EXTENSION = re.compile(r"\((?P<inside>[^)]*)\)|add(?P<added>[b#]?\d+)")
 _BARE_ALTERATION = re.compile(r"(?P<alteration>[b#](?:5|6|9|11|13))$")
@@ -167,7 +185,7 @@ def _split_extensions(text: str) -> tuple[str, list[int]]:
         for token in re.split(r"[,\s]+", raw or ""):
             cleaned = token.strip().lower().replace("add", "")
             if cleaned in _EXTENSIONS:
-                steps.append(_EXTENSIONS[cleaned])
+                steps.extend(_EXTENSIONS[cleaned])
             elif cleaned:
                 raise ChordSymbolError(f"unknown chord alteration {token!r}")
         return ""
@@ -188,7 +206,7 @@ def _peel_alterations(quality: str) -> tuple[str, list[int]]:
         match = _BARE_ALTERATION.search(remaining)
         if match is None:
             return quality, []
-        steps.append(_EXTENSIONS[match["alteration"].lower()])
+        steps.extend(_EXTENSIONS[match["alteration"].lower()])
         remaining = remaining[: match.start()] + remaining[match.end() :]
     return remaining, steps
 

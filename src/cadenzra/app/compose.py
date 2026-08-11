@@ -59,7 +59,7 @@ from cadenzra.model.primitives.time import bar_containing
 from cadenzra.model.review import ReviewRequest
 from cadenzra.model.spec import PieceSpec
 from cadenzra.model.state import PipelineState, attempt_key, voice_key
-from cadenzra.model.structure import GroupRef, SectionPlan
+from cadenzra.model.structure import SectionPlan
 from cadenzra.model.voice import VoicePart
 from cadenzra.notation.assemble import assemble_score, assemble_section
 from cadenzra.notation.scaffold import count_bar_checks, splice_bars, split_bars
@@ -332,10 +332,7 @@ def _entry_order(section: SectionPlan, voice_ids: list[VoiceId]) -> list[VoiceId
 
 def _voices_in(section: SectionPlan, spec: PieceSpec) -> list[VoiceId]:
     """Which voices sing here, resolving any group references."""
-    named = set(section.voice_ids)
-    for ref in section.active_voices:
-        if isinstance(ref, GroupRef):
-            named |= {v.voice_id for v in spec.voices if v.group == ref.group}
+    named = section.resolved_voice_ids(spec)
     if not named:
         named = set(spec.voices_by_id)
     return [voice.voice_id for voice in spec.voices if voice.voice_id in named]

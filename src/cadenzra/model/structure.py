@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from cadenzra.model.primitives.ids import MotifId, SectionId, VoiceId
 from cadenzra.model.primitives.meter import MeterSpec
+from cadenzra.model.spec import PieceSpec
 
 
 class DynTarget(BaseModel, frozen=True):
@@ -116,8 +117,23 @@ class SectionPlan(BaseModel, frozen=True):
 
     @property
     def voice_ids(self) -> list[VoiceId]:
-        """Just the directly-named voices; group references resolve elsewhere."""
+        """Just the directly-named voices; see `resolved_voice_ids` for groups."""
         return [ref for ref in self.active_voices if isinstance(ref, str)]
+
+    def resolved_voice_ids(self, spec: PieceSpec) -> set[VoiceId]:
+        """Every voice active here, with group references expanded.
+
+        The one definition of "who sings in this section" — the pipeline and
+        the validators must agree on it, or a plan the validator rejects is one
+        the pipeline would have played (and vice versa).
+        """
+        active = set(self.voice_ids)
+        for ref in self.active_voices:
+            if isinstance(ref, GroupRef):
+                active |= {
+                    voice.voice_id for voice in spec.voices if voice.group == ref.group
+                }
+        return active
 
     @property
     def group_names(self) -> list[str]:

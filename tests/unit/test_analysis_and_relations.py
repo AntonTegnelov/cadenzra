@@ -405,6 +405,25 @@ def test_suspended_and_extended_qualities_the_probe_pieces_asked_for() -> None:
     assert parse_chord_symbol("Am11").pitch_classes == frozenset({9, 11, 0, 2, 4, 7})
 
 
+def test_the_jazz_vocabulary_the_game_score_run_asked_for() -> None:
+    """A Collier-flavored harmony brief wrote Dm(maj9)/D, D7(sus4,b9)/D,
+    A7alt/D and A13sus4/D, and each bounced a whole section's harmony."""
+    assert parse_chord_symbol("Dm(maj9)/D").pitch_classes == frozenset({2, 5, 9, 1, 4})
+    assert parse_chord_symbol("D7(sus4,b9)/D").pitch_classes == frozenset(
+        {2, 6, 9, 0, 7, 3}
+    )
+    assert parse_chord_symbol("A7alt/D").pitch_classes == frozenset(
+        {9, 10, 0, 1, 2, 3, 5, 7}
+    )
+    assert parse_chord_symbol("A13sus4/D").pitch_classes == frozenset({9, 11, 2, 4, 6, 7})
+    assert parse_chord_symbol("G7(alt)").pitch_classes == frozenset(
+        {7, 11, 2, 5, 8, 10, 1, 3}
+    )
+    assert parse_chord_symbol("Faug7(b9)/D").pitch_classes == frozenset(
+        {5, 9, 1, 3, 6, 2}
+    )
+
+
 def test_a_slash_is_always_a_bass_note() -> None:
     """Which is why there is no 6/9: it cannot be told apart from a C6 over a
     bass, so the spelling would be an entry nothing could reach."""

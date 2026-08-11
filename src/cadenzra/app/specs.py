@@ -389,6 +389,45 @@ METAL_KPOP = PieceSpec(
 )
 
 
+GAME_SCORE = PieceSpec(
+    title="Aegis",
+    style_prompt=(
+        "A modern orchestral video-game score in the vein of the Dota 2 "
+        "trailer music: dark, heroic and cinematic, built on driving "
+        "low-string ostinatos, weighty brass chorales, wordless choir, and "
+        "timpani. The harmony is dense and multilayered in the manner of "
+        "Jacob Collier — extended tertian chords, close upper-structure "
+        "voicings in the choir and inner strings, chromatic inner-voice "
+        "motion, the hook reharmonized on each return — but always anchored "
+        "to a simple bass motion. The whole piece hangs on one short, "
+        "instantly memorable hook treated like a great hip-hop producer's "
+        "loop: an earworm before the first section ends, and kept audible in "
+        "every section. Odd meters grooved so naturally they pass for 4/4 — "
+        "the pulse feels effortless unless you count."
+    ),
+    voices=[
+        _voice("choir_high", "C4", "A5", program=52, lyrics=False, group="choir"),
+        _voice("choir_low", "G2", "G4", program=52, lyrics=False, group="choir"),
+        _voice("horn", "B1", "G5", program=60, lyrics=False, group="brass"),
+        _voice("trumpet", "E3", "C6", program=56, lyrics=False, group="brass"),
+        # Bass-trombone floor and a low-C-extension contrabass: the piece
+        # centers on D, and a brass/string bottom that cannot play the tonic
+        # an octave down fights every climax.
+        _voice("trombone", "Bb1", "F4", program=57, lyrics=False, group="brass"),
+        _voice("violin1", "G3", "E6", program=48, lyrics=False, group="strings"),
+        _voice("violin2", "G3", "C6", program=48, lyrics=False, group="strings"),
+        _voice("viola", "C3", "E5", program=48, lyrics=False, group="strings"),
+        _voice("cello", "C2", "G4", program=48, lyrics=False, group="strings"),
+        _voice("contrabass", "C1", "G3", program=43, lyrics=False, group="strings"),
+        _voice("timpani", "C2", "A3", program=47, lyrics=False),
+    ],
+    meters_allowed=[FOUR_FOUR, SEVEN_EIGHT, FIVE_FOUR, ELEVEN_EIGHT],
+    key_center="d",
+    target_minutes=3.0,
+    tempo_bpm=100,
+)
+
+
 SPECS: dict[str, PieceSpec] = {
     "tool-choir": TOOL_CHOIR,
     "fugue": FUGUE,
@@ -403,4 +442,5 @@ SPECS: dict[str, PieceSpec] = {
     "metal": METAL,
     "kpop": KPOP,
     "metal-kpop": METAL_KPOP,
+    "game-score": GAME_SCORE,
 }

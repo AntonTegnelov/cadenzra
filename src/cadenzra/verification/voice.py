@@ -216,8 +216,10 @@ def deficit_text(message: str, meter: MeterSpec) -> str | None:
     holding 1/8 in 4/4 fails "at: 1/8", and reporting that as "off by 1/8"
     when the bar is 7/8 short sent repairs across two model tiers hunting
     the wrong number. The warning alone cannot distinguish a bar short by
-    (bar − X) from one over by X, so the likely reading leads and the other
-    stays visible.
+    (bar − X) from one over by X, so the smaller correction leads and the
+    other stays visible — a bar that misses by a sixteenth is overwhelmingly
+    one written a sixteenth over, not one nearly empty, and a repair makes
+    one small edit toward the number it reads first.
     """
     remainder = overflow_of(message)
     if remainder is None:
@@ -227,6 +229,8 @@ def deficit_text(message: str, meter: MeterSpec) -> str | None:
     except (ValueError, ZeroDivisionError):
         return None
     missing = meter.bar_length - position
+    if position < missing:
+        return f"{position} over (or {missing} short)"
     return f"{missing} short (or {position} over)"
 
 

@@ -167,7 +167,14 @@ def plan_structure_schema(
                                     "type": "object",
                                     "properties": {
                                         "motif_id": {"type": "string"},
-                                        "voice_id": {"type": "string"},
+                                        "voice_id": {
+                                            "type": "string",
+                                            "description": (
+                                                "The single voice that carries the "
+                                                "entry — never a group. One of: "
+                                                + ", ".join(voices)
+                                            ),
+                                        },
                                         "bar": {
                                             "type": "integer",
                                             "description": "Bar within this section.",

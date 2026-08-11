@@ -164,6 +164,48 @@ def test_an_entry_given_to_a_silent_voice_is_rejected() -> None:
     assert any("not singing in that section" in item.message for item in feedback)
 
 
+def test_an_entry_on_a_member_of_an_active_group_is_accepted() -> None:
+    """Group references count: an entry on a voice activated via its group is
+    not "silent", or every plan that mixes groups and entries is unplannable."""
+    plan = _plan(
+        _section(
+            active_voices=[GroupRef(group="lower"), "soprano"],
+            material=[
+                MaterialEntry(motif_id="subject", voice_id="bass", bar=1, relation="exact")
+            ],
+        ),
+        _section(section_id="B", meter=FIVE_FOUR, bars=16),
+        materials_needed=[
+            MaterialBrief(motif_id="subject", role="fugue subject", description="")
+        ],
+    )
+
+    assert validate_structure(plan, _spec()) == []
+
+
+def test_an_entry_on_a_group_name_is_rejected_as_a_group() -> None:
+    """An entry must land on one voice. Naming a group is rejected with the
+    real reason — 'not singing' would send the regeneration the wrong way."""
+    plan = _plan(
+        _section(
+            active_voices=[GroupRef(group="lower")],
+            material=[
+                MaterialEntry(motif_id="subject", voice_id="lower", bar=1, relation="exact")
+            ],
+        ),
+        materials_needed=[
+            MaterialBrief(motif_id="subject", role="fugue subject", description="")
+        ],
+    )
+
+    feedback = validate_structure(plan, _spec())
+
+    assert any(
+        "group" in item.message and "bass" in item.message for item in feedback
+    )
+    assert not any("not singing" in item.message for item in feedback)
+
+
 def test_an_unverifiable_relation_is_rejected_at_plan_time() -> None:
     """Catching this here is much cheaper than discovering at section time
     that a declared entry could never have been checked."""
@@ -295,6 +337,23 @@ def test_a_motif_that_does_not_fill_its_meter_is_told_the_deficit() -> None:
     assert reason is not None
     assert "3/4 short" in reason, "7/8 bar holding 1/8 is 3/4 short"
     assert "1/8 over" in reason, "the overfull reading stays visible"
+
+
+def test_a_barely_overfull_bar_leads_with_the_overfull_reading() -> None:
+    """The two readings of "failed at: X" are kept, but the smaller correction
+    must lead: a viola part holding 15/16 against 7/8 was twice told "13/16
+    short" first, and twice re-sent the same overfull bar. A bar that misses
+    by a sixteenth is overwhelmingly one written a sixteenth over."""
+    from cadenzra.model.artifacts import BarCheckWarning
+    from cadenzra.verification.motifs import _bar_check_reason
+
+    reason = _bar_check_reason(
+        [BarCheckWarning(line=9, column=1, message="bar check failed at: 1/16")],
+        SEVEN_EIGHT,
+    )
+
+    assert reason is not None
+    assert reason.index("1/16 over") < reason.index("13/16 short")
 
 
 def test_no_bar_checks_means_no_paraphrase_to_give() -> None:

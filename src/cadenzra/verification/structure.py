@@ -27,7 +27,7 @@ def validate_structure(plan: StructurePlan, spec: PieceSpec) -> list[FeedbackIte
         *_check_meters_allowed(plan, spec),
         *_check_voices_resolve(plan, spec),
         *_check_duration(plan, spec),
-        *_check_material(plan),
+        *_check_material(plan, spec),
     ]
 
 
@@ -118,7 +118,7 @@ def _section_minutes(section: SectionPlan) -> float:
     return quarters / section.tempo_bpm
 
 
-def _check_material(plan: StructurePlan) -> list[FeedbackItem]:
+def _check_material(plan: StructurePlan, spec: PieceSpec) -> list[FeedbackItem]:
     """Declared entries must name declared briefs, with relations we can check.
 
     A `MaterialEntry` landing inside its own section is already guaranteed by
@@ -128,7 +128,7 @@ def _check_material(plan: StructurePlan) -> list[FeedbackItem]:
     briefs = {brief.motif_id for brief in plan.materials_needed}
     feedback = []
     for section in plan.sections:
-        active = set(section.voice_ids)
+        active = section.resolved_voice_ids(spec)
         for entry in section.material:
             if entry.motif_id not in briefs:
                 feedback.append(
@@ -142,7 +142,25 @@ def _check_material(plan: StructurePlan) -> list[FeedbackItem]:
                         ),
                     )
                 )
-            if active and entry.voice_id not in active:
+            if entry.voice_id in spec.groups:
+                members = ", ".join(
+                    voice.voice_id
+                    for voice in spec.voices
+                    if voice.group == entry.voice_id
+                )
+                feedback.append(
+                    _item(
+                        section.section_id,
+                        voice_id=entry.voice_id,
+                        message=(
+                            f"the entry at bar {entry.bar} of section "
+                            f"{section.section_id} is given to {entry.voice_id!r}, "
+                            "which is a group; a material entry names exactly one "
+                            f"voice — here one of: {members}"
+                        ),
+                    )
+                )
+            elif active and entry.voice_id not in active:
                 feedback.append(
                     _item(
                         section.section_id,
