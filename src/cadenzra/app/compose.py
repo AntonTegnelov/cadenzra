@@ -1612,6 +1612,7 @@ def critique(state: PipelineState, services: ComposeServices) -> PipelineState:
     plan = state.structure
     assert plan is not None
 
+    listens = 0
     for attempt in range(1, services.budgets.interpretation + 1):
         artifacts = state.artifacts
         assert artifacts is not None
@@ -1622,18 +1623,27 @@ def critique(state: PipelineState, services: ComposeServices) -> PipelineState:
             artifacts.audio_path, artifacts.performance_midi_path, plan
         )
 
-        _log.info("listening to the performance")
-        verdict = services.critic.critique(artifacts.audio_path, _brief(state))
-        items = [*measured, *services.router.localize(verdict, plan)]
-        if services.runlog is not None:
-            services.runlog.note(
-                "What the critic heard",
-                verdict.overall
-                + ("" if not items else "\n\n" + "\n".join(
-                    f"- [{item.level}] {item.message}" for item in items
-                )),
-            )
-        if verdict.acceptable and not items:
+        # The critique budget bounds the expensive, imprecise listening
+        # passes; the interpretation budget bounds the cheap re-renders.
+        # Once the listens are spent, the measurements alone decide —
+        # `budgets.critique` used to be defined and never read at all.
+        items = list(measured)
+        acceptable = True
+        if listens < services.budgets.critique:
+            listens += 1
+            _log.info("listening to the performance")
+            verdict = services.critic.critique(artifacts.audio_path, _brief(state))
+            items += services.router.localize(verdict, plan)
+            acceptable = verdict.acceptable
+            if services.runlog is not None:
+                services.runlog.note(
+                    "What the critic heard",
+                    verdict.overall
+                    + ("" if not items else "\n\n" + "\n".join(
+                        f"- [{item.level}] {item.message}" for item in items
+                    )),
+                )
+        if acceptable and not items:
             _log.info("the critic is satisfied")
             return state.model_copy(update={"feedback": []})
 
@@ -1644,8 +1654,17 @@ def critique(state: PipelineState, services: ComposeServices) -> PipelineState:
             # Anything costlier than a re-render means regenerating music that
             # already passed every deterministic check, on the weakest evidence
             # in the system. Recording it is the honest outcome: the run is
-            # complete, and a human can read what the critic thought.
+            # complete, and a human can read what the critic thought — loudly,
+            # as a named deferral, not a quiet completion.
             _log.info("the remaining concerns need a human ear; recording them")
+            if services.runlog is not None:
+                services.runlog.note(
+                    "Deferred critic findings",
+                    "The run completes with these unaddressed — acting on them "
+                    "would regenerate validated music on the system's weakest "
+                    "evidence:\n"
+                    + "\n".join(f"- [{item.level}] {item.message}" for item in items),
+                )
             return state.model_copy(update={"feedback": items})
 
         adjusted = adjust_interpretation(state, items)
@@ -1674,7 +1693,13 @@ def adjust_interpretation(
     text = " ".join(item.message.lower() for item in items)
 
     intensity = current.dynamics_curve_intensity
-    if any(word in text for word in ("flat", "lifeless", "unvarying", "no dynamic")):
+    # The system's own measurement acts by kind; the critic's prose by
+    # keywords. The measured item's wording ("carries almost none of it")
+    # matched no keyword, so the one complaint the system could prove was
+    # the one it could never act on.
+    if any(item.kind == "dynamics-unrealized" for item in items) or any(
+        word in text for word in ("flat", "lifeless", "unvarying", "no dynamic")
+    ):
         intensity = min(2.0, intensity * 1.5)
     elif any(word in text for word in ("extreme", "too loud", "overpowering")):
         intensity = max(0.25, intensity * 0.6)

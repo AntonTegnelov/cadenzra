@@ -76,7 +76,10 @@ class RetryBudgets(BaseSettings):
     # exists for runaway loops, not to cut converging ones short.
     section: int = 12
     score: int = 3
-    critique: int = 1
+    # One listen to find a problem, one to confirm the knob fixed it. This
+    # budget bounds the critic invocations themselves — the loop count is
+    # `interpretation`, which bounds the cheap re-renders.
+    critique: int = 2
     interpretation: int = 2
 
     def for_level(self, level: str) -> int:

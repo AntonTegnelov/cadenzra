@@ -158,9 +158,13 @@ def _nearest_dynamic(value: int) -> str:
 
 
 def _item(message: str) -> FeedbackItem:
+    # kind="dynamics-unrealized" is the structured hook the interpretation
+    # adjuster acts on — keyword-matching this message's prose could never
+    # fire on the system's own finding.
     return FeedbackItem(
         source=SOURCE,
         level="interpretation",
         location=Fraction(0),
+        kind="dynamics-unrealized",
         message=message,
     )

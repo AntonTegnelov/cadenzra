@@ -132,3 +132,110 @@ def test_the_planned_spread_is_read_from_the_plan(
     start: str, target: str | None, expected: int
 ) -> None:
     assert planned_spread(_plan(start, target)) == expected
+
+
+def test_the_measured_dynamics_item_moves_the_intensity_knob(
+    tmp_path: Path,
+) -> None:
+    """The one complaint the system can *prove* — the measured
+    dynamics-unrealized item — used to be the one it could never act on:
+    the adjuster keyword-matched prose, and "carries almost none of it"
+    matched no keyword. Structured findings act by kind."""
+    from cadenzra.app.compose import adjust_interpretation
+    from cadenzra.model.primitives.pitch import Pitch
+    from cadenzra.model.spec import PieceSpec, VoiceSpec
+    from cadenzra.model.state import PipelineState
+    from cadenzra.model.style import StylePack
+
+    plan = _plan("pp", "ff")
+    performance = _performance(tmp_path / "p.midi", [64, 64, 64])
+    audio = _audio(tmp_path / "a.wav", amplitude=2000)
+    (item,) = validate_audio_dynamics(audio, performance, plan)
+    assert item.kind == "dynamics-unrealized"
+
+    state = PipelineState(
+        spec=PieceSpec(
+            title="T",
+            style_prompt="s",
+            voices=[
+                VoiceSpec(
+                    voice_id="soprano",
+                    kind="vocal",
+                    range_low=Pitch(step="C", octave=4),
+                    range_high=Pitch(step="A", octave=5),
+                    midi_program=52,
+                )
+            ],
+            meters_allowed=[FOUR_FOUR],
+            target_minutes=1.0,
+        ),
+        style=StylePack(),
+        structure=plan,
+    )
+
+    adjusted = adjust_interpretation(state, [item])
+
+    assert adjusted is not None, "the measured finding moves the knob"
+    assert adjusted.interpretation is not None
+    assert adjusted.interpretation.dynamics_curve_intensity > 1.0
+
+
+def test_the_critique_budget_bounds_the_listening_passes(tmp_path: Path) -> None:
+    """budgets.critique was defined and never read — the loop invoked the
+    critic on every interpretation attempt. The listening pass is the most
+    expensive, least precise call in the system; its budget must be the one
+    that bounds it. At zero, the measurements alone decide."""
+    from cadenzra.app.compose import ComposeServices, critique
+    from cadenzra.app.config import RetryBudgets
+    from cadenzra.model.artifacts import RenderedArtifacts
+    from cadenzra.model.primitives.pitch import Pitch
+    from cadenzra.model.spec import PieceSpec, VoiceSpec
+    from cadenzra.model.state import PipelineState
+    from cadenzra.model.style import StylePack
+    from tests.fakes.critic import ScriptedCritic
+
+    plan = _plan("pp", "ff")
+    performance = _performance(tmp_path / "p.midi", [20, 60, 100, 127])
+    audio = _audio(tmp_path / "a.wav", amplitude=2000)
+    state = PipelineState(
+        spec=PieceSpec(
+            title="T",
+            style_prompt="s",
+            voices=[
+                VoiceSpec(
+                    voice_id="soprano",
+                    kind="vocal",
+                    range_low=Pitch(step="C", octave=4),
+                    range_high=Pitch(step="A", octave=5),
+                    midi_program=52,
+                )
+            ],
+            meters_allowed=[FOUR_FOUR],
+            target_minutes=1.0,
+        ),
+        style=StylePack(),
+        structure=plan,
+        artifacts=RenderedArtifacts(
+            lily_path=tmp_path / "score.ly",
+            pdf_path=tmp_path / "score.pdf",
+            score_midi_path=performance,
+            performance_midi_path=performance,
+            audio_path=audio,
+        ),
+    )
+    critic = ScriptedCritic()
+    services = ComposeServices(
+        generator=None,  # type: ignore[arg-type]
+        renderer=None,  # type: ignore[arg-type]
+        workdir=tmp_path,
+        budgets=RetryBudgets(critique=0),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+        critic=critic,
+        router=critic,
+    )
+
+    result = critique(state, services)
+
+    assert critic.calls == 0, "no listens are budgeted, so none happen"
+    assert result.feedback == [], "the clean measurement completes the run"
