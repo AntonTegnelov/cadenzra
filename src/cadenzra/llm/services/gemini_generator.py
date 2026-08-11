@@ -218,7 +218,11 @@ class GeminiGenerator:
             system_prompt=VOICE_SYSTEM,
             user_prompt=build_voice_prompt(ctx),
             tool=write_part_schema(
-                techniques=bool(ctx.rejected and ctx.rejected.techniques),
+                # Closed with the prompt gate (see prompts/voice.py
+                # _uses_techniques): the field and the vocabulary open and
+                # close together, or the model is asked for what it was
+                # never told about.
+                techniques=False,
             ),
             turn=TurnInfo(
                 label=WRITE_PART_TOOL,

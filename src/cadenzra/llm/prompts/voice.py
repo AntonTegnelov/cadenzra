@@ -206,9 +206,17 @@ def _unit_name(denominator: int) -> str:
 
 
 def _uses_techniques(ctx: VoiceContext) -> bool:
-    """Techniques are gated: the vocabulary appears only where a piece already
-    calls for one, never as a standing invitation (docs/04)."""
-    return bool(ctx.rejected and ctx.rejected.techniques)
+    """Closed until the capability can be performed (deferred to the quality
+    phase). The interpretation stage ignores technique spans and voice ids,
+    and its mappings cannot be populated from a style pack — offering the
+    vocabulary invites the model to decorate music with annotations nothing
+    downstream plays. The old gate (a rejected part already carrying
+    techniques) also made first attempts unreachable, so the only door in
+    was one that could never open. Validators and the replay schema keep
+    understanding stored parts that carry spans.
+    """
+    del ctx
+    return False
 
 
 def _techniques_block() -> str:

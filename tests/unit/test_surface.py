@@ -215,6 +215,28 @@ def test_techniques_are_not_mentioned_unless_the_piece_uses_them() -> None:
     assert "vocal fry" not in prompt
 
 
+def test_techniques_stay_off_the_surface_even_on_regeneration() -> None:
+    """The capability is closed until it can be performed: the interpretation
+    stage ignores spans and voice ids, and its mappings cannot be populated
+    — offering the vocabulary invites the model to decorate music with
+    annotations nothing downstream plays. The old gate (rejected part
+    carried techniques) also made first attempts unreachable, so the only
+    door in was one that could never open."""
+    from cadenzra.model.voice import TechniqueSpan, VoicePart
+
+    rejected = VoicePart(
+        section_id="A",
+        voice_id="alto",
+        lily_music="a'8 a' b' b' c''4. |",
+        techniques=[TechniqueSpan(technique="whispered", from_bar=1, to_bar=1)],
+    )
+
+    prompt = build_voice_prompt(_ctx(rejected=rejected))
+
+    assert "Available techniques" not in prompt
+    assert "whispered" not in prompt
+
+
 def test_a_singing_voice_is_told_its_words_come_later() -> None:
     """Words are written afterwards, against the finished music and for every
     singer at once, so the voice call never writes them (docs/10)."""
