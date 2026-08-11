@@ -177,7 +177,13 @@ def plan_structure_schema(
                                         },
                                         "bar": {
                                             "type": "integer",
-                                            "description": "Bar within this section.",
+                                            "description": (
+                                                "Bar within this section: 1 is "
+                                                "this section's first bar, "
+                                                "wherever the section sits in "
+                                                "the piece. Never a bar number "
+                                                "counted across the whole piece."
+                                            ),
                                         },
                                         "relation": {
                                             "type": "string",

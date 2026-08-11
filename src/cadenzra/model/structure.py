@@ -111,7 +111,10 @@ class SectionPlan(BaseModel, frozen=True):
             if not 1 <= entry.bar <= self.bars:
                 raise ValueError(
                     f"section {self.section_id!r} declares a {entry.motif_id!r} entry at "
-                    f"bar {entry.bar}, outside its {self.bars} bars"
+                    f"bar {entry.bar}, outside its {self.bars} bars — entry bars are "
+                    "counted within their own section, so every section's first bar "
+                    "is bar 1; renumber a piece-wide bar count to the bar inside "
+                    "this section"
                 )
         return self
 

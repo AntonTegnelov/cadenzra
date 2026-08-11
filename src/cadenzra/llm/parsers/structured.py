@@ -93,7 +93,7 @@ def parse_structure_plan(payload: dict[str, Any], spec: PieceSpec) -> StructureP
             form_summary=str(payload.get("form_summary", "")),
         )
     except ValidationError as error:
-        raise LLMOutputError(f"the plan is malformed: {error}") from error
+        raise LLMOutputError(f"the plan is malformed: {_reasons(error)}") from error
 
 
 def _parse_section(raw: dict[str, Any], spec: PieceSpec) -> SectionPlan:
@@ -126,8 +126,21 @@ def _parse_section(raw: dict[str, Any], spec: PieceSpec) -> SectionPlan:
             material=[_parse_entry(item, section_id) for item in raw.get("material", []) or []],
             intent=str(raw.get("intent", "")),
         )
-    except (KeyError, TypeError, ValueError, ValidationError) as error:
+    except ValidationError as error:
+        # The model reads this. `str(error)` is a pydantic dump — input_value
+        # reprs, doc links — burying the one sentence our validator wrote.
+        raise LLMOutputError(
+            f"section {section_id!r} is malformed: {_reasons(error)}"
+        ) from error
+    except (KeyError, TypeError, ValueError) as error:
         raise LLMOutputError(f"section {section_id!r} is malformed: {error}") from error
+
+
+def _reasons(error: ValidationError) -> str:
+    """A ValidationError's messages alone, stripped of pydantic's framing."""
+    return "; ".join(
+        str(item["msg"]).removeprefix("Value error, ") for item in error.errors()
+    )
 
 
 def _parse_entry(raw: dict[str, Any], section_id: SectionId) -> MaterialEntry:

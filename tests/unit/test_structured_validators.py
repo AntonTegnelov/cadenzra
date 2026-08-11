@@ -206,6 +206,48 @@ def test_an_entry_on_a_group_name_is_rejected_as_a_group() -> None:
     assert not any("not singing" in item.message for item in feedback)
 
 
+def test_an_entry_outside_its_section_teaches_local_numbering() -> None:
+    """Three consecutive live plans declared an entry at "bar 17" of a
+    12-bar section — piece-wide numbering, where bar 17 of the piece is bar
+    1 of the section; the third attempt even grew the section chasing the
+    feedback. The rejection must teach the convention and read as a
+    rehearsal note, not a pydantic traceback."""
+    from cadenzra.common.errors import LLMOutputError
+    from cadenzra.llm.parsers.structured import parse_structure_plan
+
+    payload = {
+        "sections": [
+            {
+                "section_id": "Exp2",
+                "bars": 12,
+                "meter": "7/8",
+                "key": "d minor",
+                "tempo_bpm": 96,
+                "texture": "imitative",
+                "active_voices": ["soprano"],
+                "material": [
+                    {
+                        "motif_id": "S2",
+                        "voice_id": "soprano",
+                        "bar": 17,
+                        "relation": "exact",
+                    }
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(LLMOutputError) as caught:
+        parse_structure_plan(payload, _spec())
+
+    message = str(caught.value)
+    assert "bar 17" in message and "12 bars" in message
+    assert "first bar is bar 1" in message, "the local convention is taught"
+    assert "pydantic" not in message and "input_value" not in message, (
+        "the model reads a rehearsal note, not a validation dump"
+    )
+
+
 def test_an_unverifiable_relation_is_rejected_at_plan_time() -> None:
     """Catching this here is much cheaper than discovering at section time
     that a declared entry could never have been checked."""
