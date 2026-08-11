@@ -85,7 +85,11 @@ def audit_state(
             "structure", validate_structure(state.structure, state.spec)
         )
     if state.motifs is not None and state.structure is not None:
-        policy = state.style.parallel_fifths_policy if state.style else "forbid"
+        # When the style pack was dropped (legacy states), the policy is
+        # unknown — default permissive: a discovery tool that guesses
+        # "forbid" flags deliberate octave doubling as a fault (minimal's
+        # doubled piano pattern, measured).
+        policy = state.style.parallel_fifths_policy if state.style else "allow"
         findings += found(
             "motif",
             validate_motifs(
