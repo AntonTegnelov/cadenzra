@@ -126,6 +126,13 @@ def validate_voice_in_context(
     ):
         if voice_id not in item.voices or item.routing == "unfixable":
             continue
+        if item.routing == "only-free-voice" and item.voice_id != voice_id:
+            # The candidate's side of the pair is prescribed and the
+            # sibling's is free: only the sibling can move, and it is
+            # already accepted. Holding the candidate's budget hostage for
+            # it burned six identical attempts, live — the section sweep,
+            # which can reopen the sibling, owns this item.
+            continue
         feedback.append(
             item.model_copy(
                 update={"voice_id": voice_id, "routing": "only-free-voice"}

@@ -593,3 +593,37 @@ def test_a_candidate_with_no_siblings_is_still_judged_against_the_harmony() -> N
     assert feedback, "a sustained non-chord tone must be flagged"
     assert all(item.kind == "held_tone" for item in feedback)
     assert all(item.voice_id == "soprano" for item in feedback)
+
+
+def test_a_collision_only_the_fixed_sibling_could_fix_is_left_to_the_sweep() -> None:
+    """Round 9, live: violin2's prescribed entry sat in unison with violin1's
+    already-accepted free line, and the voice-layer check ordered violin2 to
+    move notes it is forbidden to move — six attempts, verbatim. When the
+    router says the free side of the pair is the sibling, the candidate
+    cannot fix it and must not be held hostage; the section sweep, which can
+    reopen the sibling, owns it."""
+    from cadenzra.verification.section import validate_voice_in_context
+
+    voices = _voices(soprano=[72, 74], bass=[60, 62])  # octaves throughout
+    section = _section(
+        material=[
+            MaterialEntry(
+                motif_id="m", voice_id="soprano", bar=1, relation="exact"
+            )
+        ]
+    )
+
+    feedback = validate_voice_in_context(
+        "soprano",
+        voices["soprano"],
+        {"bass": voices["bass"]},
+        section,
+        None,
+        _style(),
+        motif_notes={"m": voices["soprano"]},  # spans soprano's whole line
+    )
+
+    assert feedback == [], (
+        "soprano's colliding bars are prescribed and bass is free: only "
+        "bass can move, and it is already accepted"
+    )

@@ -57,7 +57,7 @@ from cadenzra.model.interpretation import InterpretationParams
 from cadenzra.model.lyrics import SectionLyricDirective, SectionLyrics
 from cadenzra.model.primitives.ids import MotifId, SectionId, VoiceId
 from cadenzra.model.primitives.meter import MeterSpec
-from cadenzra.model.primitives.time import bar_containing
+from cadenzra.model.primitives.time import bar_containing, offset_of
 from cadenzra.model.review import ReviewRequest
 from cadenzra.model.spec import PieceSpec, VoiceSpec
 from cadenzra.model.state import PipelineState, attempt_key, voice_key
@@ -286,7 +286,11 @@ def _write_section_voices(
                     section,
                     voice_id,
                     siblings=_siblings_of(state, section, voice_id),
-                    sibling_events=sibling_events,
+                    sibling_events=sibling_events
+                    | _future_entry_events(
+                        state, section, voice_id, motif_events,
+                        set(sibling_events),
+                    ),
                     motif_events=motif_events,
                 )
                 parts.append(part)
@@ -1141,10 +1145,44 @@ def _prescribed_entry(
     surface already states ("hand over the answer rather than the puzzle");
     30 identical live failures measured what withholding them costs.
     """
+    realized = _placed_entry_events(entry, events, voice)
+    if realized is None:
+        return None, (), 0, None  # the structure validator owns this failure
+    placed, adjustable = realized
+    text = rebar_events(
+        placed, section.meter, prefer_flats=prefer_flats(section.key)
+    )
+    if text is None:
+        _log.info(
+            "the %s entry for %s is not rebarrable (tuplets); falling back to "
+            "instruction text",
+            entry.motif_id,
+            voice.voice_id,
+        )
+        return None, (), adjustable, None
+    total = max(event.onset + event.duration for event in placed)
+    span = -(-total // section.meter.bar_length)  # ceil
+    fill = total % section.meter.bar_length
+    remainder = section.meter.bar_length - fill if fill else None
+    bars = tuple(range(entry.bar, entry.bar + int(span)))
+    return text, bars, adjustable, remainder
+
+
+def _placed_entry_events(
+    entry: MaterialEntry,
+    events: list[NoteEvent],
+    voice: VoiceSpec,
+) -> tuple[list[NoteEvent], int] | None:
+    """The entry's events realized and placed in the voice's octave.
+
+    Onsets are normalized to start at 0; the caller shifts them to the entry
+    bar. None when the relation is unreadable — the structure validator owns
+    that failure. Returns the events and the tonal-answer adjustment license.
+    """
     try:
         relation = parse_relation(entry.relation)
     except UnknownRelationError:
-        return None, (), 0, None  # the structure validator owns this failure
+        return None
     adjustable = 0
     if relation.kind == "tonal answer":
         # The literal real answer: a fifth up, zero adjustments — which the
@@ -1186,23 +1224,45 @@ def _prescribed_entry(
         )
         for event in realized
     ]
-    text = rebar_events(
-        placed, section.meter, prefer_flats=prefer_flats(section.key)
-    )
-    if text is None:
-        _log.info(
-            "the %s entry for %s is not rebarrable (tuplets); falling back to "
-            "instruction text",
-            entry.motif_id,
-            voice.voice_id,
+    return placed, adjustable
+
+
+def _future_entry_events(
+    state: PipelineState,
+    section: SectionPlan,
+    candidate: VoiceId,
+    motif_events: dict[MotifId, list[NoteEvent]] | None,
+    written: set[VoiceId],
+) -> dict[VoiceId, list[NoteEvent]]:
+    """Prescribed entries of voices not yet written, placed at their bars.
+
+    A candidate's free material can collide with an entry the plan gives a
+    later voice — live, a first violin's free bars 5-6 stated the subject in
+    unison with the second violin's prescribed entry there, and the
+    collision surfaced only once the second violin existed and could not
+    legally move. The entries are determined by the plan and the motifs, so
+    the candidate is checked against them before acceptance.
+    """
+    future: dict[VoiceId, list[NoteEvent]] = {}
+    for entry in section.material:
+        if entry.voice_id == candidate or entry.voice_id in written:
+            continue
+        events = (motif_events or {}).get(entry.motif_id) or []
+        if not events:
+            continue
+        realized = _placed_entry_events(
+            entry, events, state.spec.voices_by_id[entry.voice_id]
         )
-        return None, (), adjustable, None
-    total = max(event.onset + event.duration for event in placed)
-    span = -(-total // section.meter.bar_length)  # ceil
-    fill = total % section.meter.bar_length
-    remainder = section.meter.bar_length - fill if fill else None
-    bars = tuple(range(entry.bar, entry.bar + int(span)))
-    return text, bars, adjustable, remainder
+        if realized is None:
+            continue  # the structure validator owns the unreadable relation
+        placed, _ = realized
+        shift = offset_of(entry.bar, 1, section.meter)
+        future.setdefault(entry.voice_id, []).extend(
+            event.model_copy(update={"onset": event.onset + shift})
+            for event in placed
+        )
+    return {voice_id: sorted(notes, key=lambda note: note.onset)
+            for voice_id, notes in future.items()}
 
 
 def _previous_tail(

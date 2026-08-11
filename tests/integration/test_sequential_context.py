@@ -103,3 +103,72 @@ def test_a_doubled_line_is_caught_and_repaired_inside_the_voice_loop(
     alto = state.voices[voice_key("A", "alto")]
     assert ALTO_FIX_1.strip(" |") in alto.lily_music
     assert ALTO_FIX_2.strip(" |") in alto.lily_music
+
+
+def test_a_free_line_doubling_a_future_prescribed_entry_is_caught_early(
+    tmp_path: Path,
+) -> None:
+    """Round 9, live: violin1's free bars stated the subject in unison with
+    violin2's prescribed entry two bars later — and the collision surfaced
+    only when violin2 existed and could not legally move, burning its whole
+    budget on an impossible ask. The entry is determined by the plan, so the
+    first voice is checked against it before acceptance."""
+    from cadenzra.model.motif import Motif, MotifLibrary
+    from cadenzra.model.structure import MaterialEntry
+
+    subject = "c''4 d''4 e''4 f''4 |"
+    section = SectionPlan(
+        section_id="A",
+        bars=2,
+        meter=FOUR_FOUR,
+        key="c major",
+        tempo_bpm=90,
+        texture="imitative",
+        dynamics=DynamicsPlan(start="mf"),
+        active_voices=["viola", "alto"],
+        material=[
+            MaterialEntry(motif_id="m", voice_id="viola", bar=1, relation="exact"),
+            MaterialEntry(motif_id="m", voice_id="alto", bar=2, relation="exact"),
+        ],
+    )
+    state = _state().model_copy(
+        update={
+            "structure": StructurePlan(sections=[section]),
+            "motifs": MotifLibrary(
+                motifs={"m": Motif(motif_id="m", role="subject", lily_music=subject)}
+            ),
+        }
+    )
+    # The viola enters first (bar 1) and its free bar 2 states the subject an
+    # octave down — unison octaves against the entry the plan gives the alto
+    # at bar 2. Its repair moves bar 2; bar 1 is prescribed and protected.
+    generator = ScriptedGenerator(
+        [
+            "c''4 d''4 e''4 f''4 |\nc'4 d'4 e'4 f'4 |",
+            "e'4 f'4 g'4 a'4 |\nc''4 d''4 e''4 f''4 |",
+        ],
+        patches=[{2: "e'4 g'4 c'4 a4 |"}],
+    )
+    services = ComposeServices(
+        generator=generator,
+        renderer=LilypondAdapter(),
+        workdir=tmp_path,
+        budgets=RetryBudgets(),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+
+    state = generate_voices(state, services)
+
+    viola_patches = [
+        ctx for ctx in generator.patch_contexts if ctx.voice.voice_id == "viola"
+    ]
+    assert viola_patches, "the collision was caught at the viola's own loop"
+    parallels = [
+        item for item in viola_patches[0].feedback if item.kind == "parallels"
+    ]
+    assert parallels and all(item.voice_id == "viola" for item in parallels), (
+        "the future entry cannot move, so the viola is the free side"
+    )
+    viola = state.voices[voice_key("A", "viola")]
+    assert "e'4 g'4 c'4 a4" in viola.lily_music
