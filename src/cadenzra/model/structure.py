@@ -107,6 +107,14 @@ class SectionPlan(BaseModel, frozen=True):
             raise ValueError(
                 f"section {self.section_id!r} has non-positive tempo {self.tempo_bpm}"
             )
+        for target in self.dynamics.targets:
+            if not 1 <= target.bar <= self.bars:
+                raise ValueError(
+                    f"section {self.section_id!r} sets a dynamics target at "
+                    f"bar {target.bar}, outside its {self.bars} bars — target "
+                    "bars are counted within the section, its first bar is "
+                    "bar 1"
+                )
         for entry in self.material:
             if not 1 <= entry.bar <= self.bars:
                 raise ValueError(

@@ -17,6 +17,7 @@ from cadenzra.model.primitives.pitch import Pitch
 from cadenzra.model.spec import PieceSpec, VoiceSpec
 from cadenzra.model.structure import (
     DynamicsPlan,
+    DynTarget,
     GroupRef,
     MaterialBrief,
     MaterialEntry,
@@ -284,6 +285,48 @@ def test_a_fragment_carrying_structural_commands_is_rejected_by_the_pack_check()
 
     assert len(feedback) == 1
     assert "\\clef" in feedback[0].message
+
+
+def test_a_dynamics_target_outside_the_section_is_rejected() -> None:
+    """A target at bar 99 of an 8-bar section used to sail through to the
+    performance curves; bars are section-local everywhere."""
+    with pytest.raises(ValueError, match="bar 99"):
+        _section(
+            bars=8,
+            dynamics=DynamicsPlan(
+                start="mf", targets=[DynTarget(bar=99, level="ff")]
+            ),
+        )
+
+
+def test_a_brief_carrying_an_unknown_voice_is_rejected() -> None:
+    """`carrying_voices` names the ranges the motif prompt shows; an unknown
+    id was silently dropped by the prompt builder, so the model wrote for a
+    range set that was not the one the validator later checked."""
+    plan = _plan(
+        _section(
+            material=[
+                MaterialEntry(
+                    motif_id="subject", voice_id="soprano", bar=1, relation="exact"
+                )
+            ]
+        ),
+        materials_needed=[
+            MaterialBrief(
+                motif_id="subject",
+                role="fugue subject",
+                description="",
+                carrying_voices=["soprano", "tenor2"],
+            )
+        ],
+    )
+
+    feedback = validate_structure(plan, _spec())
+
+    assert any(
+        "tenor2" in item.message and "carrying_voices" in item.message
+        for item in feedback
+    )
 
 
 def test_an_entry_outside_its_section_teaches_local_numbering() -> None:

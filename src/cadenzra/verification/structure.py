@@ -127,6 +127,20 @@ def _check_material(plan: StructurePlan, spec: PieceSpec) -> list[FeedbackItem]:
     """
     briefs = {brief.motif_id for brief in plan.materials_needed}
     feedback = []
+    for brief in plan.materials_needed:
+        unknown = sorted(set(brief.carrying_voices) - set(spec.voices_by_id))
+        if unknown:
+            feedback.append(
+                _item(
+                    None,
+                    message=(
+                        f"the {brief.motif_id!r} brief lists carrying_voices "
+                        f"{', '.join(unknown)}, which are not voices of this "
+                        "piece — the motif is written against the ranges these "
+                        "names select, so each must be a real voice_id"
+                    ),
+                )
+            )
     for section in plan.sections:
         active = section.resolved_voice_ids(spec)
         for entry in section.material:
