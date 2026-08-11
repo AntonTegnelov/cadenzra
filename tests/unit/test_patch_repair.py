@@ -762,7 +762,7 @@ def test_an_open_prescription_is_decorated_as_a_beginning_not_a_whole(
         kind="meter",
         message="bar 2 does not fill 7/8 (2+2+3); it is 1/2 short",
     )
-    generator = ScriptedGenerator([f"{GOOD} c''4 b'8 a'8 g'8 |"])
+    generator = ScriptedGenerator(patches=[{2: "c''4 b'8 a'8 g'8 |"}])
     services = _loop_services(generator, RecordingRenderer([clean()]), tmp_path)
 
     _voice_to_convergence(
@@ -782,8 +782,10 @@ def test_an_open_prescription_is_decorated_as_a_beginning_not_a_whole(
         motif_events={"m": events},
     )
 
-    ctx = generator.contexts[0]
-    (decorated,) = ctx.feedback
+    # The open bar is the model's to repair, so the decorated item reaches
+    # the patch (the complete bar 1 stays pinned).
+    ctx = generator.patch_contexts[0]
+    (decorated,) = [item for item in ctx.feedback if "prescribed" in item.message]
     assert "write it exactly as" not in decorated.message
     assert "begin it exactly with" in decorated.message
     assert "exactly 5/8" in decorated.message, (
@@ -937,3 +939,27 @@ def test_a_streak_of_malformed_patches_falls_back_to_a_full_rewrite(
     )
     assert generator.calls == 1, "the fallback full rewrite finished the job"
     assert part.lily_music.strip() == GOOD
+
+
+def test_the_open_final_bar_of_a_prescription_is_patchable() -> None:
+    """Orchestra, live: an entry mismatch inside the model-completed final
+    bar of an open prescription survived sixteen sweeps byte-identical —
+    the permission model protected the one bar that needed the fix. Only
+    the complete bars are spliced, so only they are pinned."""
+    from fractions import Fraction as F
+
+    from cadenzra.app.compose import _protected_bars
+    from cadenzra.model.contexts import MaterialInstruction
+    from cadenzra.model.motif import Motif
+
+    instruction = MaterialInstruction(
+        motif=Motif(motif_id="m", role="subject", lily_music="c'4 |"),
+        entry=MaterialEntry(motif_id="m", voice_id="alto", bar=1, relation="exact"),
+        prescribed_lily="c'4 d'4 e'4 f'4 | g'2.",
+        prescribed_bars=(1, 2),
+        open_remainder=F(1, 4),
+    )
+
+    assert _protected_bars([instruction], _loop_state(_loop_section())) == {1}, (
+        "the complete bar is pinned; the open bar is the model's to repair"
+    )

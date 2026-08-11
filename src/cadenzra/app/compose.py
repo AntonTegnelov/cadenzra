@@ -388,7 +388,16 @@ def _protected_bars(
     bars: set[int] = set()
     for instruction in materials:
         if instruction.prescribed_bars:
-            bars |= set(instruction.prescribed_bars)
+            protected = set(instruction.prescribed_bars)
+            if instruction.open_remainder is not None:
+                # The final bar of an open prescription is model-completed:
+                # only complete bars are spliced, so only they are pinned.
+                # Protecting the open bar left a byte-identical entry
+                # mismatch inside it unrepairable for sixteen live sweeps —
+                # the permission model was guarding the one bar that needed
+                # the fix.
+                protected.discard(instruction.prescribed_bars[-1])
+            bars |= protected
         elif state.motifs is not None and instruction.entry.motif_id in state.motifs:
             length = max(
                 1,
