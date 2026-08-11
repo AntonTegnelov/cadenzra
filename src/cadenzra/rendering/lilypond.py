@@ -65,15 +65,22 @@ def parse_bar_check_warnings(output: str) -> list[BarCheckWarning]:
 
 
 def first_error(output: str) -> str | None:
-    """The compiler's own description of what went wrong.
+    """The compiler's own description of what went wrong, with its evidence.
 
     Reported verbatim rather than paraphrased. A guessed diagnosis is worse
     than none: telling a generator to "check durations and bar checks" when the
     real fault was an unknown note name sends it looking in the wrong place,
-    and it will spend its whole budget there.
+    and it will spend its whole budget there. The offending source line the
+    compiler prints beneath the error rides along — "not a duration" alone
+    sent a live loop through six identical non-compiling attempts, because
+    the model was never shown which token was broken.
     """
     for match in _ERROR.finditer(output):
-        return str(match["message"]).strip()
+        message = str(match["message"]).strip()
+        rest = output[match.end() :].lstrip("\n").splitlines()
+        if rest and rest[0].strip() and not _ERROR.match(rest[0]):
+            message += f", in: {rest[0].strip()[:120]}"
+        return message
     return None
 
 

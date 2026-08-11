@@ -9,7 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from cadenzra.rendering.lilypond import parse_bar_check_warnings, parse_warnings
+from cadenzra.rendering.lilypond import (
+    first_error,
+    parse_bar_check_warnings,
+    parse_warnings,
+)
 
 STDERR = Path(__file__).parent.parent / "fixtures" / "lilypond_stderr"
 
@@ -77,3 +81,22 @@ def test_warnings_other_than_bar_checks_are_kept_but_not_misfiled() -> None:
 
     assert len(parse_warnings(output)) == 2
     assert len(parse_bar_check_warnings(output)) == 1
+
+
+def test_the_first_error_carries_the_offending_source_line() -> None:
+    """"not a duration" alone sent a live tenor loop through 6/6 identical
+    non-compiling attempts — the model was never shown WHICH token was
+    broken, so it resubmitted it. The compiler prints the offending source
+    on the next line; quoting the compiler means quoting that too."""
+    output = (
+        "Processing `score.ly'\n"
+        "score.ly:62:156: error: not a duration\n"
+        "  aes34 g34 f34 ees34 |\n"
+        "         ^\n"
+    )
+
+    message = first_error(output)
+
+    assert message is not None
+    assert "not a duration" in message
+    assert "aes34" in message, "the offending source is quoted beside the error"
