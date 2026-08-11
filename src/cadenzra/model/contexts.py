@@ -95,6 +95,11 @@ class HarmonyContext(BaseModel, frozen=True):
     pinned: list[PinnedTone] = Field(default_factory=list)
     previous_section: SectionPlan | None = None
     previous_skeleton: HarmonicSkeleton | None = None
+    # The grid the last attempt produced, when it was rejected. A retry is
+    # an amendment: shown the grid, the model can keep every chord it is not
+    # asked to change — regenerating from scratch traded one fixed pinned
+    # bar for another, six live attempts running.
+    rejected: HarmonicSkeleton | None = None
     feedback: list[FeedbackItem] = Field(default_factory=list)
 
 

@@ -307,6 +307,7 @@ def build_harmony_prompt(
     feedback: list[FeedbackItem] | None = None,
     *,
     pinned: list[PinnedTone] | None = None,
+    rejected: HarmonicSkeleton | None = None,
 ) -> str:
     """One section's progression, with the previous section's tail as context.
 
@@ -364,6 +365,17 @@ def build_harmony_prompt(
         "exactly that, with no gaps and no overlaps."
     )
     blocks.append(f"Dynamics to support: {dynamics_text(section.dynamics)}.")
+    if rejected is not None and rejected.events:
+        # A retry is an amendment. Regenerating from scratch traded one
+        # fixed pinned bar for another, six live attempts running — shown
+        # its own grid, the model can keep every chord it is not asked to
+        # change.
+        blocks.append(
+            "Your previous progression is below. Keep every chord the notes "
+            "under 'Rehearsal notes' do not complain about, exactly as "
+            "written, and change only the chords they flag:\n"
+            + chord_chart(rejected, section.meter)
+        )
     notes = rehearsal_notes(feedback or [], what="progression")
     if notes:
         blocks.append(notes)

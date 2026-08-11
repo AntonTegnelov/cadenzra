@@ -310,3 +310,60 @@ def test_a_passing_clash_is_not_flagged() -> None:
             )
             == []
         )
+
+
+def test_a_harmony_retry_sees_the_grid_it_is_amending() -> None:
+    """Round 11, live: two pinned-tone faults at bars 1 and 5 bounced for six
+    attempts — each retry regenerated the whole grid from scratch and traded
+    one fixed bar for the other, because the rejected grid was never shown.
+    A retry is an amendment: it must see the grid it is amending."""
+    from pathlib import Path
+
+    from cadenzra.app.config import RetryBudgets
+    from cadenzra.app.pipeline import LayerServices, _harmony_for
+    from cadenzra.model.primitives.pitch import Pitch
+    from cadenzra.model.spec import PieceSpec, VoiceSpec
+    from cadenzra.model.state import PipelineState
+    from cadenzra.model.style import StylePack
+    from tests.fakes.generator import ScriptedGenerator
+
+    clashing = _skeleton(*(["Cm", "Cm", "C"] + ["Cm"] * 13))  # Eb over C major
+    fitting = _skeleton(*["Cm"] * 16)
+    generator = ScriptedGenerator(skeletons=[clashing, fitting])
+    cello = VoiceSpec(
+        voice_id="cello",
+        kind="instrument",
+        range_low=Pitch(step="C", octave=2),
+        range_high=Pitch(step="G", octave=4),
+        midi_program=42,
+    )
+    spec = PieceSpec(
+        title="T",
+        style_prompt="s",
+        voices=[cello],
+        meters_allowed=[FOUR_FOUR],
+        target_minutes=1.0,
+    )
+    services = LayerServices(
+        generator=generator,
+        renderer=None,  # type: ignore[arg-type]
+        workdir=Path("/tmp/unused"),
+        budgets=RetryBudgets(),
+    )
+    subject = _notes([60, 55, 63, 62])  # clashes with B major, fits Cm
+
+    _harmony_for(
+        PipelineState(spec=spec, style=StylePack()),
+        services,
+        _section(ENTRY),
+        StylePack(),
+        previous_section=None,
+        previous_skeleton=None,
+        motif_notes={"subject1": subject},
+    )
+
+    first, second = generator.harmony_contexts
+    assert first.rejected is None, "a first attempt amends nothing"
+    assert second.rejected == clashing, (
+        "the retry is shown the grid whose flagged events it must change"
+    )

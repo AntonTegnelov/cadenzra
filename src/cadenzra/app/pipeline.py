@@ -268,8 +268,12 @@ def _harmony_for(
 
     pinned = pinned_entry_tones(section, motif_notes or {})
 
+    # A mutable cell, deliberately: `_converge` owns the loop, so the only
+    # channel for "the grid the last attempt produced" is this closure.
+    last: list[HarmonicSkeleton] = []
+
     def generate(feedback: list[FeedbackItem]) -> HarmonicSkeleton:
-        return services.generator.generate_harmony(
+        skeleton = services.generator.generate_harmony(
             HarmonyContext(
                 section=section,
                 style=style,
@@ -277,9 +281,12 @@ def _harmony_for(
                 pinned=pinned,
                 previous_section=previous_section,
                 previous_skeleton=previous_skeleton,
+                rejected=last[-1] if last else None,
                 feedback=feedback,
             )
         )
+        last.append(skeleton)
+        return skeleton
 
     def validate(candidate: HarmonicSkeleton) -> list[FeedbackItem]:
         return [
