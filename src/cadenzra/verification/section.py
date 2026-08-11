@@ -326,7 +326,13 @@ def _check_harmonic_alignment(
             )
             continue
 
-        threshold = event.duration * SUSTAINED_SHARE
+        # "Held" needs both: a real share of the chord, and at least a beat
+        # of absolute overlap. Without the floor, a finer chord rhythm makes
+        # the check stricter — a passing eighth under a beat-long chord was
+        # flagged as a held tone, and six grids died looking for a chord
+        # containing the melody's neighbours all at once.
+        beat = section.meter.bar_length / section.meter.units_per_bar
+        threshold = max(event.duration * SUSTAINED_SHARE, beat)
         permitted = permitted_pitch_classes(chord, strict)
         for voice_id, notes in sorted(voices.items()):
             for note in notes_sounding_at(notes, event.offset):

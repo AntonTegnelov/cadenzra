@@ -196,7 +196,11 @@ def check_entries_against_grid(
                 if pitch.pc12 in permitted_pitch_classes(chord, strict):
                     continue
                 sounding = min(onset + note.duration, event.end) - max(onset, event.offset)
-                if sounding < event.duration * SUSTAINED_SHARE:
+                # Same definition of "held" as the section check: a share of
+                # the chord AND at least a beat — a pass here must guarantee
+                # no held-tone there, no more and no less.
+                beat = section.meter.bar_length / section.meter.units_per_bar
+                if sounding < max(event.duration * SUSTAINED_SHARE, beat):
                     continue
                 feedback.append(
                     _item(

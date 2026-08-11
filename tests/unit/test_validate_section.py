@@ -159,6 +159,34 @@ def test_a_sustained_clash_against_the_chord_is_flagged() -> None:
     assert feedback[0].kind == "held_tone"
 
 
+def test_a_passing_eighth_is_not_a_held_tone() -> None:
+    """C1's grids died to an inverted subject's eighth-note E4: the chord
+    under it was asked to contain Ab, C and E at once, six attempts running.
+    An eighth is embellishment, not a held tone — a note counts as held only
+    when it overlaps the chord for at least a beat, however short the chord,
+    so a finer chord rhythm cannot make the check stricter."""
+    def _note(duration: Fraction) -> list[NoteEvent]:
+        return [
+            NoteEvent(
+                midi_pitch=75,
+                onset=Fraction(0),
+                duration=duration,
+                velocity=90,
+                channel=0,
+            )
+        ]
+
+    passing = validate_section(
+        {"soprano": _note(Fraction(1, 8))}, _section(), _skeleton("C"), _style()
+    )
+    sustained = validate_section(
+        {"soprano": _note(Fraction(1, 4))}, _section(), _skeleton("C"), _style()
+    )
+
+    assert passing == [], "an eighth over a beat-long chord is a passing tone"
+    assert [item.kind for item in sustained] == ["held_tone"]
+
+
 def test_a_flat_key_spells_its_feedback_in_flats() -> None:
     """The double-fugue's immortal violation told a cello that wrote ees' to
     fix a "D#4" — MIDI spelling leaking into the musician surface. In a flat

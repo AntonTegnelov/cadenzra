@@ -228,20 +228,23 @@ def test_the_harmony_loop_threads_the_pinned_tones() -> None:
 
 def test_a_passing_clash_is_not_flagged() -> None:
     """Same threshold as the downstream held-tone check: a plan-time pass must
-    guarantee no unfixable held-tone downstream, no more and no less."""
-    quick = [
-        NoteEvent(
-            midi_pitch=63,
-            onset=Fraction(0),
-            duration=Fraction(1, 16),
-            velocity=90,
-            channel=0,
-        )
-    ]
+    guarantee no unfixable held-tone downstream, no more and no less. The
+    eighth is the sharp boundary — an inverted subject's passing eighth once
+    demanded a chord containing Ab, C and E at once, six grids running."""
+    for duration in (Fraction(1, 16), Fraction(1, 8)):
+        quick = [
+            NoteEvent(
+                midi_pitch=63,
+                onset=Fraction(0),
+                duration=duration,
+                velocity=90,
+                channel=0,
+            )
+        ]
 
-    assert (
-        check_entries_against_grid(
-            _skeleton("G7"), _section(ENTRY), {"subject1": quick}
+        assert (
+            check_entries_against_grid(
+                _skeleton("G7"), _section(ENTRY), {"subject1": quick}
+            )
+            == []
         )
-        == []
-    )
