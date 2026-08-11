@@ -207,7 +207,12 @@ def parallel_runs(
         else:
             if current:
                 runs.append((current_interval, current))
-            current = [next_up.onset]
+            # The approach attack opens the run: the fix for a parallel
+            # "into the downbeat" usually lives in the note before it, and a
+            # patch offered only the arrival bar can never make that edit —
+            # a live loop died on exactly one such fault, three sweeps
+            # running.
+            current = [first_up.onset, next_up.onset]
             current_interval = interval
         previous_index = index
     if current:

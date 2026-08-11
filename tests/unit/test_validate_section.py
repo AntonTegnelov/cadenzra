@@ -96,6 +96,11 @@ def test_parallel_fifths_are_caught_and_located() -> None:
     assert item.kind == "parallels"
     assert item.voices == ("bass", "soprano")
     assert item.routing == "both-free"
+    assert item.span == (Fraction(0), Fraction(1, 4)), (
+        "the approach is part of the passage: a live loop died on one "
+        "'into the downbeat' fault whose fix lived in the bar before, "
+        "which the patch was never offered"
+    )
 
 
 def test_parallel_octaves_are_caught() -> None:
