@@ -164,6 +164,12 @@ def test_the_fragment_contract_lives_in_the_system_prompt() -> None:
     assert "bar check" in SYSTEM_PROMPT
     assert "\\relative" in SYSTEM_PROMPT
     assert "explicit duration" in SYSTEM_PROMPT.lower()
+    assert "never an octave" in SYSTEM_PROMPT, (
+        "two live runs died on scientific octave digits fused into notes: "
+        "d34 (does not compile) and d2 for 'D2' (compiles as a half note "
+        "and silently breaks the meter) — the contract teaches the rule "
+        "up front"
+    )
     assert "\\relative" not in prompt
     assert "Write the part under these conventions" not in prompt
 

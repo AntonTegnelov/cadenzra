@@ -30,6 +30,9 @@ regular and covers every letter: a flat adds -es and a sharp adds -is — ces \
 des ees fes ges aes bes, and cis dis eis fis gis ais bis. Never eb, bb, cb, \
 f#, or gbes.
   - An explicit duration on every note (c'8 c'8, not c'8 c').
+  - The digit after a note letter is always a duration, never an octave \
+number: d2 is a half-note D, not the note D2. Octave is shown only with \
+marks — c is C3, c' is C4, c'' is C5.
   - A bar check | at the end of every bar, including the last.
   - Notes, rests, durations, ties, slurs, dynamics, hairpins and markup only. \
 No \\time, \\clef, \\key, \\tempo, \\score, \\new or any other structural command \
