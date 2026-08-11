@@ -86,17 +86,39 @@ def test_warnings_other_than_bar_checks_are_kept_but_not_misfiled() -> None:
 def test_the_first_error_carries_the_offending_source_line() -> None:
     """"not a duration" alone sent a live tenor loop through 6/6 identical
     non-compiling attempts — the model was never shown WHICH token was
-    broken, so it resubmitted it. The compiler prints the offending source
-    on the next line; quoting the compiler means quoting that too."""
+    broken, so it resubmitted it. The real compiler (2.26, captured) prints
+    the offending line SPLIT at the error column — prefix line, then the
+    remainder indented to the column — so quoting only the first line showed
+    "in: d" while the rejected token, the 34 of d34, sat unseen on the next.
+    Quoting the compiler means reconstructing the line and naming the token
+    it stopped at."""
     output = (
-        "Processing `score.ly'\n"
-        "score.ly:62:156: error: not a duration\n"
-        "  aes34 g34 f34 ees34 |\n"
-        "         ^\n"
+        "Processing `octnum.ly'\n"
+        "Parsing...\n"
+        "octnum.ly:5:6: error: not a duration\n"
+        "    d\n"
+        "     34 d38 d38 d34 d34 |\n"
+        "octnum.ly:5:10: error: not a duration\n"
+        "    d34 d\n"
+        "         38 d38 d34 d34 |\n"
     )
 
     message = first_error(output)
 
     assert message is not None
     assert "not a duration" in message
-    assert "aes34" in message, "the offending source is quoted beside the error"
+    assert "d34 d38 d38 d34 d34 |" in message, "the split line is reconstructed"
+    assert "'34'" in message, "the token the compiler stopped at is named"
+
+
+def test_a_prefix_only_error_line_is_still_quoted() -> None:
+    """An error whose next line is another diagnostic keeps the plain quote."""
+    output = (
+        "score.ly:7:1: error: unknown escaped string: `\\wrong'\n"
+        "score.ly:9:2: error: not a duration\n"
+    )
+
+    message = first_error(output)
+
+    assert message is not None
+    assert "unknown escaped string" in message

@@ -79,7 +79,18 @@ def first_error(output: str) -> str | None:
         message = str(match["message"]).strip()
         rest = output[match.end() :].lstrip("\n").splitlines()
         if rest and rest[0].strip() and not _ERROR.match(rest[0]):
-            message += f", in: {rest[0].strip()[:120]}"
+            # 2.26 prints the offending source line split at the error
+            # column: a prefix line, then the remainder indented to that
+            # column. Quoting only the prefix showed a live loop "in: d"
+            # while the rejected token — the 34 of d34 — sat unseen on the
+            # next line, six identical attempts running.
+            prefix = rest[0].strip()
+            if len(rest) > 1 and rest[1].strip() and not _ERROR.match(rest[1]):
+                suffix = rest[1].strip()
+                line = (prefix + suffix)[:120]
+                message += f", in: {line}, at the token {suffix.split()[0]!r}"
+            else:
+                message += f", in: {prefix[:120]}"
         return message
     return None
 

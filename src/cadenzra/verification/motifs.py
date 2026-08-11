@@ -100,7 +100,8 @@ def validate_motifs(
                         + ". Write plain LilyPond: absolute pitch with Dutch note "
 "names — a flat adds -es and a sharp adds -is on every letter "
                         "(ces des ees fes ges aes bes, cis dis eis fis gis "
-                        "ais bis), never cb or eb or f#. An explicit "
+                        "ais bis), never cb or eb or f#. Octaves are marks, "
+                        "never digits: c (C3), c' (C4), c'' (C5). An explicit "
                         "duration on every note, a bar check | at every barline, and "
                         f"every bar filling {meter.surface_string()} exactly"
                     ),
