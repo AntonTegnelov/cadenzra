@@ -414,9 +414,8 @@ def _check_range(
         side += f"{limit.to_scientific()} ({limit.to_lilypond()})"
         remedy = _octave_remedy(pitches, voice_spec, above, section)
         if len(pitches) == 1:
-            pitch = pitches[0]
             message = (
-                f"{pitch.to_scientific()} ({pitch.to_lilypond()}) in bar {bar} "
+                f"{_both_spellings(pitches[0], section)} in bar {bar} "
                 f"is {'above' if above else 'below'} {side}{remedy}"
             )
         else:
@@ -425,10 +424,29 @@ def _check_range(
                 f"bar {bar} has {len(pitches)} notes "
                 f"{'above' if above else 'below'} {side}, "
                 f"the {'highest' if above else 'lowest'} "
-                f"{extreme.to_scientific()} ({extreme.to_lilypond()}){remedy}"
+                f"{_both_spellings(extreme, section)}{remedy}"
             )
         feedback.append(_item(part, section, bar=bar, message=message))
     return feedback
+
+
+def _both_spellings(pitch: Pitch, section: SectionPlan) -> str:
+    """The pitch with both enharmonic LilyPond spellings where they differ.
+
+    The checker spells MIDI per the key, but the part may have written the
+    other name: a sharp-side key reported "dis,," for a part that wrote
+    "ees,,", and the live model hunted a token it never wrote — then
+    "fixed" a good e,, into dis,, chasing it. MIDI cannot recover the
+    written spelling, so the message names both.
+    """
+    flats = prefer_flats(section.key)
+    alt = Pitch.from_midi_number(pitch.midi_number, prefer_flats=not flats)
+    if alt.to_lilypond() == pitch.to_lilypond():
+        return f"{pitch.to_scientific()} ({pitch.to_lilypond()})"
+    return (
+        f"{pitch.to_scientific()} ({pitch.to_lilypond()}, perhaps written "
+        f"{alt.to_lilypond()})"
+    )
 
 
 def _octave_remedy(

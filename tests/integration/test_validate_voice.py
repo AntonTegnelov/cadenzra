@@ -337,3 +337,31 @@ def test_every_message_reads_like_a_rehearsal_note(
         assert "bar " in item.message
         assert "offset" not in item.message
         assert "Fraction" not in item.message
+
+
+def test_a_range_message_names_both_enharmonic_spellings(
+    renderer: LilypondAdapter, tmp_path: Path
+) -> None:
+    """Orchestra, live: the part wrote ees,, and the sharp-side key spelled
+    the complaint dis,, — the model hunted a token it never wrote, and
+    'fixed' a good e,, into dis,, chasing it. MIDI cannot recover the
+    written spelling, so the message names both."""
+    section = SectionPlan(
+        section_id="A",
+        bars=1,
+        meter=FOUR_FOUR,
+        key="e minor",  # sharp side: the checker's spelling is dis
+        tempo_bpm=96,
+        texture="homophonic",
+        dynamics=DynamicsPlan(start="mf"),
+        active_voices=["alto"],
+    )
+    part = VoicePart(
+        section_id="A", voice_id="alto", lily_music="ees4 ees4 ees4 ees4 |"
+    )
+
+    feedback = validate_voice(part, ALTO, section, renderer, tmp_path)
+
+    (item,) = feedback
+    assert "dis" in item.message
+    assert "ees" in item.message, "the spelling the part may actually use"
