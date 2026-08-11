@@ -100,6 +100,8 @@ def material_text(
     rather than the puzzle (docs/08, principle 2).
     """
     entry, motif = instruction.entry, instruction.motif
+    if instruction.prescribed_lily is not None:
+        return _prescribed_text(instruction)
     lines = [
         f"At bar {entry.bar}, enter with the {motif.role} ({motif.motif_id}).",
         f"The {motif.role} is written as:",
@@ -126,6 +128,38 @@ def material_text(
             "value exactly as written and let the notes cross barlines: where "
             "a barline falls mid-note, split it into two tied notes "
             "(a quarter becomes 8~ | 8). The check hears tied notes as one."
+        )
+    return "\n".join(lines)
+
+
+def _prescribed_text(instruction: MaterialInstruction) -> str:
+    """The entry as finished bars, ready to copy.
+
+    The relation, the register, and the section's barlines are already
+    applied — every downstream check hears intervals, pitch classes and
+    onsets, so a token-for-token copy passes them all by construction.
+    Handing over the puzzle instead cost 30 identical live failures
+    (docs/08 principle 2: the surface hands over answers, not puzzles).
+    """
+    entry, motif = instruction.entry, instruction.motif
+    lines = [
+        f"At bar {entry.bar}, enter with the {motif.role} ({motif.motif_id}).",
+        "Write the entry exactly as:",
+        f"  {instruction.prescribed_lily}",
+    ]
+    if motif.description:
+        lines.append(f"  ({motif.description})")
+    lines.append(
+        "Copy it token for token — its pitches, durations, ties and barlines "
+        "are already in your range and this section's meter, and the entry is "
+        "checked against them. Complete the final bar if it is left open, and "
+        "continue the line around the entry."
+    )
+    if instruction.max_adjustable:
+        lines.append(
+            "This is the answer at the fifth, in your octave. If the key "
+            f"demands it, you may adjust at most {instruction.max_adjustable} "
+            "of its notes by one step, keeping the contour."
         )
     return "\n".join(lines)
 

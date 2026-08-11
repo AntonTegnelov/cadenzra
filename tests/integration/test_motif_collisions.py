@@ -117,6 +117,44 @@ def test_compatible_subjects_pass(tmp_path: Path) -> None:
     assert [item for item in feedback if "parallel" in item.message] == []
 
 
+def test_a_motif_with_no_whole_octave_fit_is_rejected(tmp_path: Path) -> None:
+    """The span-only rule admits a motif that fits at *no* whole-octave
+    placement: D3–E5 spans 26 against a G3–C6 voice's 29, yet +0 dips below
+    the floor and +12 tops the ceiling. Entries are placed by whole octaves
+    (every check is octave-blind), so this motif is unsingable in that voice
+    and must be rejected before anything is built."""
+    wide = VoiceSpec(
+        voice_id="wide",
+        kind="vocal",
+        range_low=Pitch(step="G", octave=3),
+        range_high=Pitch(step="C", octave=6),
+        midi_program=52,
+    )
+    spec = SPEC.model_copy(update={"voices": [wide]})
+    plan = _plan(
+        MaterialEntry(motif_id="upper", voice_id="wide", bar=1, relation="exact")
+    ).model_copy(deep=True)
+    plan = StructurePlan(
+        sections=[
+            plan.sections[0].model_copy(update={"active_voices": ["wide"]})
+        ]
+    )
+    library = MotifLibrary(
+        motifs={
+            "upper": Motif(
+                motif_id="upper", role="subject", lily_music="d4 e''2 d4 |"
+            )
+        }
+    )
+
+    feedback = validate_motifs(
+        library, plan, spec, LilypondAdapter(), tmp_path, parallel_policy="forbid"
+    )
+
+    assert any("whole-octave" in item.message for item in feedback)
+    assert any("wide" in item.message for item in feedback)
+
+
 def test_a_permissive_policy_skips_the_collision_check(tmp_path: Path) -> None:
     feedback = validate_motifs(
         _library("c''4 d''4 e''4 f''4 |", "c'4 d'4 e'4 f'4 |"),

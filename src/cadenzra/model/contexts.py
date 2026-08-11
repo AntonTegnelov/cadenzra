@@ -39,6 +39,15 @@ class MaterialInstruction(BaseModel, frozen=True):
     # section's meter, the prompt must teach ties across barlines — the only
     # way to keep every note value exact in the foreign meter.
     home_meter: MeterSpec | None = None
+    # The entry rendered ready to copy: realized under its relation, shifted
+    # into the voice's range by whole octaves, rebarred into the section's
+    # meter. None when the events are unavailable or unrepresentable — the
+    # prompt then falls back to instruction text.
+    prescribed_lily: str | None = None
+    # The bars the prescription occupies, for the patch permission model.
+    prescribed_bars: tuple[int, ...] = ()
+    # Tonal answers may adjust this many notes by a step; 0 elsewhere.
+    max_adjustable: int = 0
 
 
 class MotifContext(BaseModel, frozen=True):

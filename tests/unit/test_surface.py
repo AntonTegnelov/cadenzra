@@ -248,6 +248,50 @@ def test_a_motif_travels_as_notation_with_an_instruction_not_an_id() -> None:
     assert "fugue subject" in prompt
 
 
+def test_a_prescribed_entry_is_handed_over_as_finished_bars() -> None:
+    """Everything about a declared entry is determined — pitches, rhythm,
+    and (computed against the voice's range) the octave. Handing the model
+    the puzzle instead of the answer cost 30 identical live failures; with a
+    prescription, the prompt shows the exact bars and drops the written-pitch
+    notation, the closed relation instruction, and the note-for-note demand
+    that revoked the octave permission."""
+    instruction = MaterialInstruction(
+        motif=Motif(
+            motif_id="subject", role="subject", lily_music="d4 a4 f8 e8 |"
+        ),
+        entry=MaterialEntry(
+            motif_id="subject", voice_id="alto", bar=2, relation="P5 up"
+        ),
+        prescribed_lily="a'4 e''4 c''8 b'8 |",
+        prescribed_bars=(2,),
+    )
+
+    prompt = build_voice_prompt(_ctx(materials=[instruction]))
+
+    assert "a'4 e''4 c''8 b'8 |" in prompt, "the finished bars are shown"
+    assert "exactly as" in prompt
+    assert "d4 a4 f8 e8" not in prompt, "the written-pitch source is withheld"
+    assert "transpose" not in prompt.lower(), "no closed relation instruction"
+    assert "note for note" not in prompt, "no demand that revokes the answer"
+
+
+def test_a_tonal_answer_prescription_carries_its_adjustment_license() -> None:
+    instruction = MaterialInstruction(
+        motif=Motif(motif_id="s", role="subject", lily_music="d4 a4 |"),
+        entry=MaterialEntry(
+            motif_id="s", voice_id="alto", bar=1, relation="tonal answer"
+        ),
+        prescribed_lily="a'4 e''4 |",
+        prescribed_bars=(1,),
+        max_adjustable=2,
+    )
+
+    prompt = build_voice_prompt(_ctx(materials=[instruction]))
+
+    assert "at most 2" in prompt
+    assert "exactly as" in prompt
+
+
 def test_a_regeneration_prompt_carries_the_rejection_and_the_rehearsal_notes() -> None:
     from cadenzra.model.feedback import FeedbackItem
 

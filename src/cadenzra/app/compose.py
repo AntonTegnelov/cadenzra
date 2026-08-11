@@ -53,24 +53,32 @@ from cadenzra.model.critique import CritiqueBrief
 from cadenzra.model.feedback import FeedbackItem, FeedbackLevel
 from cadenzra.model.interpretation import InterpretationParams
 from cadenzra.model.lyrics import SectionLyricDirective, SectionLyrics
-from cadenzra.model.primitives.ids import SectionId, VoiceId
+from cadenzra.model.primitives.ids import MotifId, SectionId, VoiceId
 from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.primitives.time import bar_containing
 from cadenzra.model.review import ReviewRequest
-from cadenzra.model.spec import PieceSpec
+from cadenzra.model.spec import PieceSpec, VoiceSpec
 from cadenzra.model.state import PipelineState, attempt_key, voice_key
-from cadenzra.model.structure import SectionPlan
+from cadenzra.model.structure import MaterialEntry, SectionPlan
 from cadenzra.model.voice import VoicePart
 from cadenzra.notation.assemble import assemble_score, assemble_section
+from cadenzra.notation.keys import prefer_flats
+from cadenzra.notation.rebar import octave_displacement, rebar_events
 from cadenzra.notation.scaffold import count_bar_checks, splice_bars, split_bars
 from cadenzra.performance.interpret import interpret_performance
 from cadenzra.verification.audio import validate_audio_dynamics
 from cadenzra.verification.lyrics import missing_devices, validate_section_lyrics
 from cadenzra.verification.midi_analysis import (
+    NoteEvent,
     channel_track_invariant_ok,
     extract_voice_notes,
 )
 from cadenzra.verification.section import validate_section
+from cadenzra.verification.transposition import (
+    TONAL_ANSWER_MAX_ALTERED_SHARE,
+    UnknownRelationError,
+    parse_relation,
+)
 from cadenzra.verification.voice import validate_voice
 
 _log = logging.getLogger(__name__)
@@ -201,6 +209,7 @@ def generate_voices(state: PipelineState, services: ComposeServices) -> Pipeline
     """
     plan = state.structure
     assert plan is not None
+    motif_events = analyzed_motifs(state, services.renderer, services.workdir)
 
     for section in plan.sections:
         voice_ids = [
@@ -214,7 +223,9 @@ def generate_voices(state: PipelineState, services: ComposeServices) -> Pipeline
         _log.info(
             "writing %d voices for section %s", len(voice_ids), section.section_id
         )
-        results = _write_section_voices(state, services, section, voice_ids)
+        results = _write_section_voices(
+            state, services, section, voice_ids, motif_events
+        )
         state = state.model_copy(
             update={
                 "voices": state.voices
@@ -247,6 +258,7 @@ def _write_section_voices(
     services: ComposeServices,
     section: SectionPlan,
     voice_ids: list[VoiceId],
+    motif_events: dict[MotifId, list[NoteEvent]] | None = None,
 ) -> list[VoicePart]:
     """One section's voices — concurrent for homophony, sequential for
     counterpoint.
@@ -271,6 +283,7 @@ def _write_section_voices(
                     section,
                     voice_id,
                     siblings=_siblings_of(state, section, voice_id),
+                    motif_events=motif_events,
                 )
                 parts.append(part)
                 state = state.model_copy(
@@ -287,9 +300,14 @@ def _write_section_voices(
 
     with ThreadPoolExecutor(max_workers=max(1, len(voice_ids))) as pool:
         futures = {
-            pool.submit(_voice_to_convergence, state, services, section, voice_id): (
-                voice_id
-            )
+            pool.submit(
+                _voice_to_convergence,
+                state,
+                services,
+                section,
+                voice_id,
+                motif_events=motif_events,
+            ): voice_id
             for voice_id in voice_ids
         }
         converged: list[VoicePart] = []
@@ -344,21 +362,26 @@ _PATCH_ATTEMPTS = 2
 
 
 def _protected_bars(
-    state: PipelineState, section: SectionPlan, voice_id: VoiceId
+    materials: list[MaterialInstruction], state: PipelineState
 ) -> set[int]:
     """Bars pinned by the voice's declared entries — never offered to a patch.
 
-    The motif's bar count comes from its own bar checks — the sanctioned token
-    scan — so no compile is needed to know how many bars an entry occupies.
+    A prescribed entry knows its exact span in the *section's* meter; the
+    fallback counts the motif's own bar checks (the sanctioned token scan),
+    which is only right when the meters agree.
     """
     bars: set[int] = set()
-    if state.motifs is None:
-        return bars
-    for entry in section.material:
-        if entry.voice_id != voice_id or entry.motif_id not in state.motifs:
-            continue
-        length = max(1, count_bar_checks(state.motifs[entry.motif_id].lily_music))
-        bars |= set(range(entry.bar, entry.bar + length))
+    for instruction in materials:
+        if instruction.prescribed_bars:
+            bars |= set(instruction.prescribed_bars)
+        elif state.motifs is not None and instruction.entry.motif_id in state.motifs:
+            length = max(
+                1,
+                count_bar_checks(state.motifs[instruction.entry.motif_id].lily_music),
+            )
+            bars |= set(
+                range(instruction.entry.bar, instruction.entry.bar + length)
+            )
     return bars
 
 
@@ -407,6 +430,7 @@ def _voice_to_convergence(
     *,
     prior: list[FeedbackItem] | None = None,
     siblings: dict[VoiceId, str] | None = None,
+    motif_events: dict[MotifId, list[NoteEvent]] | None = None,
 ) -> VoicePart:
     """One fragment, regenerated against its feedback until it validates.
 
@@ -429,11 +453,12 @@ def _voice_to_convergence(
     reveals are bounded by the bars on the page.
     """
     voice_spec = state.spec.voices_by_id[voice_id]
+    materials = _materials_for(state, section, voice_id, motif_events)
     feedback: list[FeedbackItem] = list(prior or [])
     rejected: VoicePart | None = (
         state.voices.get(voice_key(section.section_id, voice_id)) if prior else None
     )
-    protected = _protected_bars(state, section, voice_id)
+    protected = _protected_bars(materials, state)
     patch_attempts = 0
     offered: set[int] = set()  # bars ever offered against the current part text
     attempt = 0
@@ -474,7 +499,7 @@ def _voice_to_convergence(
                         voice=voice_spec,
                         style=state.style,  # type: ignore[arg-type]
                         skeleton=state.harmony.get(section.section_id),
-                        materials=_materials_for(state, section, voice_id),
+                        materials=materials,
                         previous_tail=_previous_tail(state, section, voice_id),
                         rejected=rejected,
                         feedback=feedback,
@@ -830,22 +855,117 @@ def _singing_voices_in(section: SectionPlan, spec: PieceSpec) -> list[VoiceId]:
 
 
 def _materials_for(
-    state: PipelineState, section: SectionPlan, voice_id: VoiceId
+    state: PipelineState,
+    section: SectionPlan,
+    voice_id: VoiceId,
+    motif_events: dict[MotifId, list[NoteEvent]] | None = None,
 ) -> list[MaterialInstruction]:
     if state.motifs is None:
         return []
     plan = state.structure
-    return [
-        MaterialInstruction(
-            motif=state.motifs[entry.motif_id],
-            entry=entry,
-            home_meter=(
-                plan.meter_declaring(entry.motif_id) if plan is not None else None
-            ),
+    instructions = []
+    for entry in section.material:
+        if entry.voice_id != voice_id or entry.motif_id not in state.motifs:
+            continue
+        prescribed: str | None = None
+        prescribed_bars: tuple[int, ...] = ()
+        adjustable = 0
+        events = (motif_events or {}).get(entry.motif_id) or []
+        if events:
+            prescribed, prescribed_bars, adjustable = _prescribed_entry(
+                entry, events, state.spec.voices_by_id[voice_id], section
+            )
+        instructions.append(
+            MaterialInstruction(
+                motif=state.motifs[entry.motif_id],
+                entry=entry,
+                home_meter=(
+                    plan.meter_declaring(entry.motif_id)
+                    if plan is not None
+                    else None
+                ),
+                prescribed_lily=prescribed,
+                prescribed_bars=prescribed_bars,
+                max_adjustable=adjustable,
+            )
         )
-        for entry in section.material
-        if entry.voice_id == voice_id and entry.motif_id in state.motifs
+    return instructions
+
+
+def _prescribed_entry(
+    entry: MaterialEntry,
+    events: list[NoteEvent],
+    voice: VoiceSpec,
+    section: SectionPlan,
+) -> tuple[str | None, tuple[int, ...], int]:
+    """The entry rendered ready to copy, its bar span, and its license.
+
+    Everything about a declared entry is determined: pitches and rhythm by
+    the motif, the transform by the plan, and the register up to a whole
+    octave — which every downstream check is blind to, so it is chosen here
+    to fit the voice. Handing over the finished bars is the doctrine the
+    surface already states ("hand over the answer rather than the puzzle");
+    30 identical live failures measured what withholding them costs.
+    """
+    try:
+        relation = parse_relation(entry.relation)
+    except UnknownRelationError:
+        return None, (), 0  # the structure validator owns this failure
+    adjustable = 0
+    if relation.kind == "tonal answer":
+        # The literal real answer: a fifth up, zero adjustments — which the
+        # checker accepts, and the license below keeps the tonal option open.
+        shift = 7
+        adjustable = max(1, int(len(events) * TONAL_ANSWER_MAX_ALTERED_SHARE))
+    elif relation.kind == "transposition":
+        shift = relation.semitones
+    else:
+        shift = 0
+    if relation.kind == "inversion":
+        first = events[0].midi_pitch
+        realized = [
+            event.model_copy(update={"midi_pitch": 2 * first - event.midi_pitch})
+            for event in events
+        ]
+    else:
+        realized = [
+            event.model_copy(update={"midi_pitch": event.midi_pitch + shift})
+            for event in events
+        ]
+    displacement = octave_displacement(
+        [event.midi_pitch for event in realized], voice.range_low, voice.range_high
+    )
+    if displacement is None:
+        raise CadenzraError(
+            f"the {entry.motif_id!r} entry for {voice.voice_id} fits no "
+            "whole-octave placement inside "
+            f"{voice.range_low.to_scientific()}–{voice.range_high.to_scientific()}"
+            " — the motif validator should have rejected this library"
+        )
+    base = min(event.onset for event in realized)
+    placed = [
+        event.model_copy(
+            update={
+                "midi_pitch": event.midi_pitch + displacement,
+                "onset": event.onset - base,
+            }
+        )
+        for event in realized
     ]
+    text = rebar_events(
+        placed, section.meter, prefer_flats=prefer_flats(section.key)
+    )
+    if text is None:
+        _log.info(
+            "the %s entry for %s is not rebarrable (tuplets); falling back to "
+            "instruction text",
+            entry.motif_id,
+            voice.voice_id,
+        )
+        return None, (), adjustable
+    total = max(event.onset + event.duration for event in placed)
+    span = -(-total // section.meter.bar_length)  # ceil
+    return text, tuple(range(entry.bar, entry.bar + int(span))), adjustable
 
 
 def _previous_tail(
@@ -1117,6 +1237,7 @@ def _rewrite_voices(
     plan = state.structure
     assert plan is not None
     sections = plan.sections_by_id
+    motif_events = analyzed_motifs(state, services.renderer, services.workdir)
 
     for (section_id, voice_id), items in targets.items():
         _log.info("rewriting %s in section %s", voice_id, section_id)
@@ -1127,6 +1248,7 @@ def _rewrite_voices(
             voice_id,
             prior=_prioritized(items),
             siblings=_siblings_of(state, sections[section_id], voice_id),
+            motif_events=motif_events,
         )
         # Accumulated, not collected: the next voice to be repaired has to see
         # this one's new line. Rewriting every named voice against the same

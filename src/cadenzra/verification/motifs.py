@@ -25,12 +25,17 @@ from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.primitives.time import bar_containing, offset_of
 from cadenzra.model.spec import PieceSpec
 from cadenzra.model.structure import MaterialEntry, StructurePlan
+from cadenzra.notation.rebar import octave_displacement
 from cadenzra.notation.scaffold import scaffold_fragment
 from cadenzra.rendering.lilypond import first_error
 from cadenzra.verification.harmony import predicted_entry
 from cadenzra.verification.midi_analysis import NoteEvent, extract_voice_notes
 from cadenzra.verification.section import parallel_runs
-from cadenzra.verification.transposition import UnknownRelationError, parse_relation
+from cadenzra.verification.transposition import (
+    Relation,
+    UnknownRelationError,
+    parse_relation,
+)
 from cadenzra.verification.voice import deficit_text
 
 SOURCE: Final = "validate_motifs"
@@ -122,7 +127,7 @@ def validate_motifs(
                 )
             )
             continue
-        feedback += _check_range_under_relations(motif, notes, plan, spec)
+        feedback += _check_range_under_relations(motif, notes, events, plan, spec)
 
     feedback += _check_entry_collisions(events_by_motif, plan, parallel_policy)
     return feedback
@@ -246,7 +251,11 @@ def _bar_check_reason(
 
 
 def _check_range_under_relations(
-    motif: Motif, pitches: list[int], plan: StructurePlan, spec: PieceSpec
+    motif: Motif,
+    pitches: list[int],
+    events: list[NoteEvent],
+    plan: StructurePlan,
+    spec: PieceSpec,
 ) -> list[FeedbackItem]:
     """Every voice that carries this motif must be able to sing every entry.
 
@@ -286,6 +295,35 @@ def _check_range_under_relations(
                 voice.range_high.cents - voice.range_low.cents
             ) / 100
             if span <= voice_span_semitones:
+                # Width fits — but entries are placed by whole octaves (every
+                # downstream check is octave-blind), and a line can fit no
+                # k*12 even when its span does: +0 dips under the floor, +12
+                # tops the ceiling. That motif is unsingable in this voice
+                # however it is entered.
+                realized = _realized_pitches(events, relation)
+                if (
+                    realized is not None
+                    and octave_displacement(
+                        realized, voice.range_low, voice.range_high
+                    )
+                    is None
+                ):
+                    feedback.append(
+                        _item(
+                            motif.motif_id,
+                            section_id=section.section_id,
+                            voice_id=entry.voice_id,
+                            message=(
+                                f"the {motif.role} fits no whole-octave "
+                                f"placement inside the {entry.voice_id} range "
+                                f"{voice.range_low.to_scientific()} to "
+                                f"{voice.range_high.to_scientific()} under "
+                                f"{relation.describe()} — its low and high "
+                                "notes straddle both limits; narrow or "
+                                f"reposition the {motif.role}"
+                            ),
+                        )
+                    )
                 continue
 
             feedback.append(
@@ -305,6 +343,22 @@ def _check_range_under_relations(
                 )
             )
     return feedback
+
+
+def _realized_pitches(
+    events: list[NoteEvent], relation: Relation
+) -> list[int] | None:
+    """The entry's sounding pitches under the relation, or None (tonal
+    answers approximate as the literal fifth-up answer — adjustments move
+    single notes by a step, which whole-octave fit is insensitive to)."""
+    if not events:
+        return None
+    if relation.kind == "tonal answer":
+        return [event.midi_pitch + 7 for event in events]
+    predicted = predicted_entry(events, relation.kind, relation.semitones)
+    if predicted is None:
+        return None
+    return [event.midi_pitch for event in predicted]
 
 
 def _item(
