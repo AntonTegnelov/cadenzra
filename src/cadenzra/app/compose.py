@@ -590,6 +590,7 @@ def _voice_to_convergence(
     protected = _protected_bars(materials, state)
     patch_attempts = 0
     offered: set[int] = set()  # bars ever offered against the current part text
+    parser_note: list[FeedbackItem] = []  # a rejected patch's own diagnosis
     attempt = 0
     cycle = 0
 
@@ -610,7 +611,8 @@ def _voice_to_convergence(
                         skeleton=state.harmony.get(section.section_id),
                         part=rejected,
                         editable_bars=editable,
-                        feedback=_offered_feedback(feedback, editable, section),
+                        feedback=_offered_feedback(feedback, editable, section)
+                        + parser_note,
                         siblings=siblings or {},
                     )
                 )
@@ -640,11 +642,20 @@ def _voice_to_convergence(
         except LLMOutputError as error:
             # Unparseable output is a rejection whose diagnosis is already
             # written; the next attempt gets it verbatim rather than the run
-            # ending over something a retry could fix.
+            # ending over something a retry could fix. A malformed patch
+            # spends budget but is not a patch *strike*: it never touched
+            # the music, so the bar-scoped feedback stays the ask and the
+            # parser's complaint rides beside it — replacing the feedback
+            # with a locationless parser item silently disqualified the
+            # patch path, and a full rewrite of twenty bars is where fresh
+            # cross-voice violations pour in.
             if patching:
                 attempt += 1
-                patch_attempts += 1
-            feedback = _malformed("voice", section.section_id, voice_id, error)
+                parser_note = _malformed(
+                    "voice", section.section_id, voice_id, error
+                )
+            else:
+                feedback = _malformed("voice", section.section_id, voice_id, error)
             _log.warning(
                 "%s in section %s came back malformed on attempt %d/%d: %s",
                 voice_id,
@@ -655,6 +666,7 @@ def _voice_to_convergence(
             )
             continue
 
+        parser_note = []
         feedback = _entry_aware(
             validate_voice(
                 part,
@@ -1183,12 +1195,14 @@ def assemble_and_verify(
             }
             continue
 
-        # A repair sweep that does not shrink the set of distinct faults will
-        # not shrink it next time either — measured: 263 → 63 → 66, with the
-        # third sweep spending thirteen minutes proving what the second had.
+        # Sweeps are stochastic, so one regression is not a verdict — a live
+        # loop went 65 → 53 → 60 and was killed while trending down. But a
+        # loop with no new best in two consecutive sweeps is proving the
+        # same thing twice (measured: 263 → 63 → 66, thirteen minutes of
+        # sweep three re-establishing sweep two), and goes loud.
         distinct = len({item.fingerprint() for item in feedback})
         trajectory.append(distinct)
-        if len(trajectory) >= 2 and distinct >= trajectory[-2]:
+        if len(trajectory) >= 3 and min(trajectory[-2:]) >= min(trajectory[:-2]):
             path = " -> ".join(str(count) for count in trajectory)
             raise BudgetExhaustedError(
                 f"the cross-voice checks stopped converging: distinct "

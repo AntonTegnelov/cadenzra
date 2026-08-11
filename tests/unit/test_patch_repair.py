@@ -362,6 +362,42 @@ def test_a_prescribed_bar_is_never_offered_to_a_patch(tmp_path: Path) -> None:
     assert generator.calls == 1
 
 
+def test_a_malformed_patch_does_not_strike_out_the_patch_path(
+    tmp_path: Path,
+) -> None:
+    """A malformed patch never touched the music — it is a wasted call, not
+    evidence that patching cannot fix this part. Counting it as a strike
+    funneled live repairs into full rewrites, and a full rewrite of twenty
+    bars is where fresh cross-voice violations pour in. The parser's own
+    complaint retries the patch; only a patch that was applied and cleared
+    nothing is a strike."""
+    from cadenzra.common.errors import LLMOutputError
+
+    class _MalformedOnce(ScriptedGenerator):
+        raised = False
+
+        def patch_voice(self, ctx: PatchContext) -> dict[int, str]:
+            if not self.raised:
+                self.raised = True
+                raise LLMOutputError(
+                    "the replacement for bar 1 declares durations summing to 9/8"
+                )
+            return super().patch_voice(ctx)
+
+    generator = _MalformedOnce(patches=[{1: BAD}, {1: GOOD}])
+    renderer = RecordingRenderer([failing_bar_check(line=9), clean()])
+    services = _loop_services(generator, renderer, tmp_path)
+    section = _loop_section()
+
+    part = _voice_to_convergence(
+        _loop_state(section), services, section, "alto", prior=[_bar_scoped_item()]
+    )
+
+    assert generator.calls == 0, "no full rewrite: the patch path stayed alive"
+    assert len(generator.patch_contexts) == 2
+    assert part.lily_music.strip() == GOOD
+
+
 def test_two_failed_patches_fall_back_to_full_regeneration(tmp_path: Path) -> None:
     """docs/04: "regeneration from scratch is the fallback when repair fails"
     — promised, never implemented until now."""
