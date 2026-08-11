@@ -132,14 +132,16 @@ class GeminiGenerator:
     def _client_for(self, tool: str) -> GeminiClient:
         return self._clients_by_tool.get(tool, self._client)
 
-    def derive_style_pack(self, spec: PieceSpec) -> StylePack:
+    def derive_style_pack(
+        self, spec: PieceSpec, feedback: list[FeedbackItem] | None = None
+    ) -> StylePack:
         payload = self._client_for(DERIVE_STYLE_TOOL).call_tool(
             system_prompt=STYLE_SYSTEM,
-            user_prompt=build_style_prompt(spec),
+            user_prompt=build_style_prompt(spec, feedback),
             tool=describe_style_schema(
                 [meter.surface_string() for meter in spec.meters_allowed]
             ),
-            turn=TurnInfo(label=DERIVE_STYLE_TOOL),
+            turn=TurnInfo(label=DERIVE_STYLE_TOOL, **_purpose_of(feedback)),
         )
         return parse_style_pack(payload, spec)
 

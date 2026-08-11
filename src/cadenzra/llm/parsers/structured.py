@@ -34,7 +34,7 @@ from cadenzra.model.structure import (
     StructurePlan,
     VoiceRef,
 )
-from cadenzra.model.style import RhythmicCell, StylePack
+from cadenzra.model.style import RhythmicCell, StyleFragment, StylePack
 
 
 def parse_style_pack(payload: dict[str, Any], spec: PieceSpec) -> StylePack:
@@ -66,8 +66,21 @@ def parse_style_pack(payload: dict[str, Any], spec: PieceSpec) -> StylePack:
         dynamics_arc=str(payload.get("dynamics_arc", "")),
         interpretation_defaults=InterpretationParams(),
         few_shot_fragments=[
-            str(item) for item in _list_of(payload, "few_shot_fragments", required=False)
+            _parse_fragment(raw, spec)
+            for raw in _list_of(payload, "few_shot_fragments", required=False)
         ],
+    )
+
+
+def _parse_fragment(raw: Any, spec: PieceSpec) -> StyleFragment:
+    if not isinstance(raw, dict):
+        raise LLMOutputError(
+            f"a style fragment came back as {type(raw).__name__}; each fragment "
+            "is an object with a meter and its lily text"
+        )
+    return StyleFragment(
+        meter=_match_meter(_text(raw, "meter", where="a style fragment"), spec),
+        lily=_text(raw, "lily", where="a style fragment"),
     )
 
 

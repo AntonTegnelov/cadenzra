@@ -241,7 +241,9 @@ def test_a_failing_run_still_writes_its_summary_and_both_state_copies(
     from tests.fakes.renderer import RecordingRenderer
 
     class _Failing:
-        def derive_style_pack(self, spec: object) -> object:
+        def derive_style_pack(
+            self, spec: object, feedback: object = None
+        ) -> object:
             raise LLMOutputError("no style at all")
 
     out = tmp_path / "smoke"

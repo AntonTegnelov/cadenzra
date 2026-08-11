@@ -33,6 +33,7 @@ class ScriptedGenerator:
         *,
         by_voice: dict[tuple[str, str], str] | None = None,
         style: StylePack | None = None,
+        styles: list[StylePack] | None = None,
         plans: list[StructurePlan] | None = None,
         motifs: list[MotifLibrary] | None = None,
         skeletons: list[HarmonicSkeleton] | None = None,
@@ -45,6 +46,7 @@ class ScriptedGenerator:
         self._fragments = list(fragments or [])
         self._by_voice = dict(by_voice or {})
         self._style = style
+        self._styles = list(styles or [])
         self._plans = list(plans or [])
         self._motifs = list(motifs or [])
         self._skeletons = list(skeletons or [])
@@ -62,10 +64,16 @@ class ScriptedGenerator:
         self.harmony_contexts: list[HarmonyContext] = []
         self.reviews: list[ReviewRequest] = []
         self.style_calls = 0
+        self.style_feedback: list[list[FeedbackItem]] = []
         self.plan_calls = 0
 
-    def derive_style_pack(self, spec: PieceSpec) -> StylePack:
+    def derive_style_pack(
+        self, spec: PieceSpec, feedback: list[FeedbackItem] | None = None
+    ) -> StylePack:
         self.style_calls += 1
+        self.style_feedback.append(list(feedback or []))
+        if self._styles:
+            return _pick(self._styles, self.style_calls - 1, what="style")
         return self._style if self._style is not None else StylePack()
 
     def plan_structure(

@@ -65,7 +65,9 @@ name bars, sections and voices.
 Answer by calling the `give_verdict` tool. Never reply with prose."""
 
 
-def build_style_prompt(spec: PieceSpec) -> str:
+def build_style_prompt(
+    spec: PieceSpec, feedback: list[FeedbackItem] | None = None
+) -> str:
     """One call that interprets the style brief, once, for the whole run.
 
     Without this node, "Tool-inspired" would be re-interpreted independently by
@@ -94,6 +96,9 @@ def build_style_prompt(spec: PieceSpec) -> str:
     ]
     if spec.key_center:
         blocks.append(f"The tonal centre is {spec.key_center}.")
+    notes = rehearsal_notes(feedback or [], what="style pack")
+    if notes:
+        blocks.append(notes)
     return "\n\n".join(blocks)
 
 

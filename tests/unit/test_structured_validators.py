@@ -7,6 +7,7 @@ several layers later.
 """
 
 from fractions import Fraction
+from pathlib import Path
 
 import pytest
 
@@ -204,6 +205,85 @@ def test_an_entry_on_a_group_name_is_rejected_as_a_group() -> None:
         "group" in item.message and "bass" in item.message for item in feedback
     )
     assert not any("not singing" in item.message for item in feedback)
+
+
+def test_style_fragments_parse_with_their_meter() -> None:
+    from cadenzra.llm.parsers.structured import parse_style_pack
+
+    payload = {
+        "idioms": ["Dorian colour"],
+        "rhythmic_cells": [],
+        "harmony_guidance": "",
+        "parallel_fifths_policy": "forbid",
+        "dynamics_arc": "",
+        "few_shot_fragments": [{"meter": "7/8", "lily": "a'8 a' b' b' c''4. |"}],
+    }
+
+    pack = parse_style_pack(payload, _spec())
+
+    (fragment,) = pack.few_shot_fragments
+    assert fragment.meter == SEVEN_EIGHT
+    assert fragment.lily == "a'8 a' b' b' c''4. |"
+
+
+def test_a_bare_string_fragment_is_rejected_with_the_shape_named() -> None:
+    from cadenzra.common.errors import LLMOutputError
+    from cadenzra.llm.parsers.structured import parse_style_pack
+
+    payload = {
+        "idioms": [],
+        "rhythmic_cells": [],
+        "harmony_guidance": "",
+        "parallel_fifths_policy": "forbid",
+        "dynamics_arc": "",
+        "few_shot_fragments": ["c'4 d'4 e'4 f'4 |"],
+    }
+
+    with pytest.raises(LLMOutputError, match="meter"):
+        parse_style_pack(payload, _spec())
+
+
+def test_a_pack_demanding_octave_doubling_while_forbidding_parallels_is_incoherent() -> None:
+    """The orchestra trap (F3): "doubling of melody in octaves" beside
+    parallel_fifths_policy='forbid' produced 72 parallel-octave complaints
+    whose minimum edit violated the range floor. A declared relationship
+    between two fields of one artifact is arithmetic, not taste."""
+    from cadenzra.model.style import StylePack
+    from cadenzra.verification.style import validate_style_pack
+    from tests.fakes.renderer import RecordingRenderer
+
+    incoherent = StylePack(
+        idioms=["doubling of melody in octaves"],
+        parallel_fifths_policy="forbid",
+    )
+    coherent = incoherent.model_copy(update={"parallel_fifths_policy": "allow"})
+
+    feedback = validate_style_pack(incoherent, RecordingRenderer(), Path("/tmp/unused"))
+
+    assert len(feedback) == 1
+    assert "doubling of melody in octaves" in feedback[0].message
+    assert "allow" in feedback[0].message
+    assert validate_style_pack(coherent, RecordingRenderer(), Path("/tmp/unused")) == []
+
+
+def test_a_fragment_carrying_structural_commands_is_rejected_by_the_pack_check() -> None:
+    """Fragments are exemplars: a \\clef inside one teaches every voice call
+    to write a forbidden command. The same denylist scan the voice validator
+    runs, applied when the pack is born."""
+    from cadenzra.model.style import StyleFragment, StylePack
+    from cadenzra.verification.style import validate_style_pack
+    from tests.fakes.renderer import RecordingRenderer
+
+    pack = StylePack(
+        few_shot_fragments=[
+            StyleFragment(meter=SEVEN_EIGHT, lily="\\clef bass c4 d4 e4 f4 |")
+        ]
+    )
+
+    feedback = validate_style_pack(pack, RecordingRenderer(), Path("/tmp/unused"))
+
+    assert len(feedback) == 1
+    assert "\\clef" in feedback[0].message
 
 
 def test_an_entry_outside_its_section_teaches_local_numbering() -> None:

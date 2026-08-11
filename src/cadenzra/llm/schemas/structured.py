@@ -70,18 +70,41 @@ def describe_style_schema(meters: list[str]) -> dict[str, Any]:
                     "type": "string",
                     "enum": ["forbid", "allow", "encourage"],
                     "description": (
-                        "Whether parallel fifths and octaves belong in this style."
+                        "Whether parallel fifths and octaves belong in this style. "
+                        "Choose 'allow' or 'encourage' when the idioms call for "
+                        "doubling in octaves or parallel motion — 'forbid' would "
+                        "contradict them."
                     ),
                 },
                 "dissonance_policy": {"type": "string"},
                 "dynamics_arc": {"type": "string"},
                 "few_shot_fragments": {
                     "type": "array",
-                    "items": {"type": "string"},
                     "description": (
-                        "Two or three short LilyPond fragments in this style, absolute "
-                        "pitch, explicit durations."
+                        "Two or three short LilyPond fragments in this style, each "
+                        "tagged with the meter it is written in."
                     ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "meter": {
+                                "type": "string",
+                                "description": (
+                                    "Exactly one of: " + ", ".join(meters)
+                                ),
+                            },
+                            "lily": {
+                                "type": "string",
+                                "description": (
+                                    "A short fragment in this style: absolute "
+                                    "pitch, an explicit duration on every note, "
+                                    "a bar check | at every barline, every bar "
+                                    "filling the tagged meter exactly."
+                                ),
+                            },
+                        },
+                        "required": ["meter", "lily"],
+                    },
                 },
             },
             "required": [

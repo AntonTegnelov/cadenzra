@@ -250,7 +250,8 @@ def style_text(style: StylePack, meter: MeterSpec) -> str:
             "selecting, repeating and varying these:"
         )
         lines.append(cells)
-    if style.few_shot_fragments:
+    fragments = style.fragments_for(meter)
+    if fragments:
         lines.append("Fragments in this style:")
-        lines += [f"  {fragment}" for fragment in style.few_shot_fragments]
+        lines += [f"  {fragment.lily}" for fragment in fragments]
     return "\n".join(lines)

@@ -19,6 +19,7 @@ from cadenzra.llm.prompts.surface import (
     position_text,
     range_text,
     rhythmic_cells_text,
+    style_text,
 )
 from cadenzra.llm.prompts.voice import SYSTEM_PROMPT, build_voice_prompt
 from cadenzra.llm.schemas.voice import write_part_schema
@@ -119,6 +120,28 @@ def test_only_the_cells_for_this_meter_are_shown() -> None:
 
     assert "driving 2+2+3" in text
     assert "plain four" not in text
+
+
+def test_only_the_fragments_for_this_meter_are_shown() -> None:
+    """Meter-untagged fragments were shown to every section — three 4/4
+    exemplars against one 5/4 cells block per prompt taught the longform
+    viola the wrong bar length. Fragments now carry their meter and a
+    section sees only its own."""
+    from cadenzra.model.style import StyleFragment
+
+    style = STYLE.model_copy(
+        update={
+            "few_shot_fragments": [
+                StyleFragment(meter=SEVEN_EIGHT, lily="a'8 a' b' b' c''4. |"),
+                StyleFragment(meter=simple_meter(4, 4), lily="c'4 d'4 e'4 f'4 |"),
+            ]
+        }
+    )
+
+    text = style_text(style, SEVEN_EIGHT)
+
+    assert "a'8 a' b' b' c''4. |" in text
+    assert "c'4 d'4 e'4 f'4 |" not in text
 
 
 def test_the_prompt_speaks_the_musician_register() -> None:
@@ -621,7 +644,9 @@ def test_a_bad_style_pack_does_not_end_the_run() -> None:
     calls = {"n": 0}
 
     class _Flaky:
-        def derive_style_pack(self, spec: object) -> StylePack:
+        def derive_style_pack(
+            self, spec: object, feedback: object = None
+        ) -> StylePack:
             calls["n"] += 1
             if calls["n"] == 1:
                 raise LLMOutputError("'3/3' is not one of this piece's meters (4/4)")

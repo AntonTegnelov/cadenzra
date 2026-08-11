@@ -29,7 +29,9 @@ from cadenzra.model.voice import VoicePart
 class GeneratorLLM(Protocol):
     """The text/notation generator, one method per generation layer."""
 
-    def derive_style_pack(self, spec: PieceSpec) -> StylePack: ...
+    def derive_style_pack(
+        self, spec: PieceSpec, feedback: list[FeedbackItem] | None = None
+    ) -> StylePack: ...
 
     def plan_structure(
         self,

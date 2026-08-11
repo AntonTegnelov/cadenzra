@@ -29,6 +29,18 @@ class RhythmicCell(BaseModel, frozen=True):
     description: str
 
 
+class StyleFragment(BaseModel, frozen=True):
+    """A short exemplar in the style, tagged with the meter it is written in.
+
+    Meter-untagged fragments were shown to every section — three 4/4
+    exemplars beside one 5/4 cells block per prompt taught a viola the wrong
+    bar length by example. A section sees only its own meter's fragments.
+    """
+
+    meter: MeterSpec
+    lily: str
+
+
 class StylePack(BaseModel, frozen=True):
     """The concrete idioms, constraints, and material one style implies."""
 
@@ -43,8 +55,16 @@ class StylePack(BaseModel, frozen=True):
     interpretation_defaults: InterpretationParams = Field(
         default_factory=InterpretationParams
     )
-    few_shot_fragments: list[str] = Field(default_factory=list)
+    few_shot_fragments: list[StyleFragment] = Field(default_factory=list)
 
     def cells_for(self, meter: MeterSpec) -> list[RhythmicCell]:
         """The cells a generator may draw on for one section's meter."""
         return [cell for cell in self.rhythmic_cells if cell.meter == meter]
+
+    def fragments_for(self, meter: MeterSpec) -> list[StyleFragment]:
+        """The exemplars a generator may be shown for one section's meter."""
+        return [
+            fragment
+            for fragment in self.few_shot_fragments
+            if fragment.meter == meter
+        ]

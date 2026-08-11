@@ -51,6 +51,7 @@ from cadenzra.verification.lyrics import validate_lyric_plan
 from cadenzra.verification.midi_analysis import NoteEvent, extract_voice_notes
 from cadenzra.verification.motifs import validate_motifs
 from cadenzra.verification.structure import validate_structure
+from cadenzra.verification.style import validate_style_pack
 
 _log = logging.getLogger(__name__)
 
@@ -86,12 +87,13 @@ def derive_style(state: PipelineState, services: LayerServices) -> PipelineState
     _log.info("deriving the style pack")
 
     def generate(feedback: list[FeedbackItem]) -> StylePack:
-        del feedback  # the style brief is fixed; only malformed output retries
-        return services.generator.derive_style_pack(state.spec)
+        return services.generator.derive_style_pack(state.spec, feedback)
 
     style = _converge(
         generate,
-        lambda candidate: [],
+        lambda candidate: validate_style_pack(
+            candidate, services.renderer, services.workdir / "style"
+        ),
         budget=services.budgets.structure,
         loop_key=attempt_key("structure", None, None),
         what="the style pack",
