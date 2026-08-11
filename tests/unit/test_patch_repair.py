@@ -461,6 +461,127 @@ def test_a_patch_that_clears_some_bars_is_not_a_failed_patch(tmp_path: Path) -> 
     assert part.lily_music == splice_bars(after_one, {2: fix2})
 
 
+def test_a_patch_prompt_keeps_only_feedback_about_offered_bars(
+    tmp_path: Path,
+) -> None:
+    """The double-fugue forensics: the patch prompt quoted complaints about
+    bars it refused to offer, steering every patch at music it could not
+    touch. Feedback about a bar outside the offer belongs to some other
+    repair; only the loop's *prompt* is filtered — the loop itself keeps the
+    full list, because convergence is measured against everything."""
+    from cadenzra.model.primitives.time import offset_of
+
+    motifs = MotifLibrary(
+        motifs={"m": Motif(motif_id="m", role="subject", lily_music=GOOD)}
+    )
+    section = _loop_section(
+        MaterialEntry(motif_id="m", voice_id="alto", bar=1, relation="exact")
+    ).model_copy(update={"bars": 2})
+    first = f"{GOOD} {BAD}"
+    state = _loop_state(section, motifs=motifs).model_copy(
+        update={
+            "voices": {
+                voice_key("A", "alto"): VoicePart(
+                    section_id="A", voice_id="alto", lily_music=first
+                )
+            }
+        }
+    )
+    prescribed_bar_item = _bar_scoped_item()
+    free_bar_item = _bar_scoped_item().model_copy(
+        update={
+            "location": offset_of(2, 1, SEVEN_EIGHT),
+            "message": "alto and viola move in parallel octaves into bar 2, beat 1",
+        }
+    )
+    generator = ScriptedGenerator(patches=[{2: GOOD}])
+    services = _loop_services(generator, RecordingRenderer([clean()]), tmp_path)
+
+    _voice_to_convergence(
+        state,
+        services,
+        section,
+        "alto",
+        prior=[prescribed_bar_item, free_bar_item],
+    )
+
+    assert len(generator.patch_contexts) == 1
+    ctx = generator.patch_contexts[0]
+    assert ctx.editable_bars == (2,)
+    assert [item.message for item in ctx.feedback] == [free_bar_item.message], (
+        "the complaint about the prescribed bar 1 is not the patch's business"
+    )
+
+
+def test_feedback_inside_a_prescribed_entry_carries_the_prescription(
+    tmp_path: Path,
+) -> None:
+    """The other half of the trap: a range item landing inside the entry span
+    told the rewrite to move notes the entry check pins. When the entry is
+    prescribed, the rehearsal note now hands the answer over — the exact bars
+    to write — instead of leaving two contradictory orders standing."""
+    from fractions import Fraction as F
+
+    from cadenzra.verification.midi_analysis import NoteEvent
+
+    def _note(pitch: int, onset: F, duration: F) -> NoteEvent:
+        return NoteEvent(
+            midi_pitch=pitch, onset=onset, duration=duration, velocity=80, channel=0
+        )
+
+    motifs = MotifLibrary(
+        motifs={"m": Motif(motif_id="m", role="subject", lily_music=GOOD)}
+    )
+    events = [
+        _note(69, F(0), F(1, 8)),
+        _note(69, F(1, 8), F(1, 8)),
+        _note(71, F(2, 8), F(1, 8)),
+        _note(71, F(3, 8), F(1, 8)),
+        _note(72, F(4, 8), F(3, 8)),
+    ]
+    section = _loop_section(
+        MaterialEntry(motif_id="m", voice_id="alto", bar=1, relation="exact")
+    )
+    range_item = FeedbackItem(
+        source="validate_voice",
+        level="voice",
+        section_id="A",
+        voice_id="alto",
+        location=Fraction(0),
+        kind="range",
+        message="1 note in bar 1 sits below the range floor",
+    )
+    unplaced_item = FeedbackItem(
+        source="validate_section",
+        level="section",
+        section_id="A",
+        voice_id="alto",
+        message="the section never reaches its dynamic target",
+    )
+    generator = ScriptedGenerator([GOOD])
+    services = _loop_services(generator, RecordingRenderer([clean()]), tmp_path)
+
+    _voice_to_convergence(
+        state := _loop_state(section, motifs=motifs),
+        services,
+        section,
+        "alto",
+        prior=[range_item, unplaced_item],
+        motif_events={"m": events},
+    )
+    del state
+
+    ctx = generator.contexts[0]
+    (instruction,) = ctx.materials
+    assert instruction.prescribed_lily == "a'8 a'8 b'8 b'8 c''4. |"
+    decorated, untouched = ctx.feedback
+    assert "write it exactly as" in decorated.message
+    assert "a'8 a'8 b'8 b'8 c''4. |" in decorated.message
+    assert untouched.message == unplaced_item.message, (
+        "an item with no bar to pin cannot be attributed to the entry"
+    )
+
+
 def test_a_compile_failure_is_never_patched(tmp_path: Path) -> None:
     """A part that does not compile has no trustworthy bar numbers to patch."""
     item = FeedbackItem(

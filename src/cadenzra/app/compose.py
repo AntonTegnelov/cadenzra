@@ -385,19 +385,100 @@ def _protected_bars(
     return bars
 
 
+def _item_bars(item: FeedbackItem, section: SectionPlan) -> set[int] | None:
+    """The bars one item names, or None when it is not bar-scoped
+    (a compile failure or parser complaint indicts the whole part)."""
+    if item.source == "parser" or item.location is None:
+        return None
+    start = bar_containing(item.location, section.meter)
+    end = bar_containing(item.span[1], section.meter) if item.span else start
+    return set(range(start, end + 1))
+
+
 def _flagged_bars(
     feedback: list[FeedbackItem], section: SectionPlan
 ) -> set[int] | None:
-    """The bars the feedback names, or None when any item is not bar-scoped
-    (a compile failure or parser complaint indicts the whole part)."""
+    """The bars the feedback names, or None when any item is not bar-scoped."""
     flagged: set[int] = set()
     for item in feedback:
-        if item.source == "parser" or item.location is None:
+        bars = _item_bars(item, section)
+        if bars is None:
             return None
-        start = bar_containing(item.location, section.meter)
-        end = bar_containing(item.span[1], section.meter) if item.span else start
-        flagged |= set(range(start, end + 1))
+        flagged |= bars
     return flagged
+
+
+def _offered_feedback(
+    feedback: list[FeedbackItem],
+    editable: tuple[int, ...],
+    section: SectionPlan,
+) -> list[FeedbackItem]:
+    """The items a patch can act on: those touching a bar it was offered.
+
+    A complaint pinned entirely to a bar outside the offer belongs to some
+    other repair; quoting it steers the patch at music it cannot touch (the
+    double-fugue's patches were told about the prescribed entry bar on every
+    attempt). Only the prompt is filtered — the loop keeps the full list,
+    because convergence is measured against everything. Every item here is
+    bar-scoped: `_editable_bars` returns () otherwise, and () never patches.
+    """
+    allowed = set(editable)
+    kept = []
+    for item in feedback:
+        bars = _item_bars(item, section)
+        assert bars is not None  # guaranteed by _editable_bars
+        if bars & allowed:
+            kept.append(item)
+    return kept
+
+
+def _entry_aware(
+    feedback: list[FeedbackItem],
+    section: SectionPlan,
+    materials: list[MaterialInstruction],
+) -> list[FeedbackItem]:
+    """Feedback with the prescription attached where it lands on an entry.
+
+    A range or rhythm complaint inside a prescribed entry's bars reads as
+    "move these notes" — an order the entry check countermands. Naming the
+    entry and quoting its finished bars turns the contradiction into an
+    answer: write exactly this. Items with no bar to pin stay untouched.
+    """
+    prescribed = [
+        instruction
+        for instruction in materials
+        if instruction.prescribed_lily is not None
+    ]
+    if not prescribed:
+        return feedback
+    decorated = []
+    for item in feedback:
+        bars = _item_bars(item, section)
+        hit = next(
+            (
+                instruction
+                for instruction in prescribed
+                if bars is not None and bars & set(instruction.prescribed_bars)
+            ),
+            None,
+        )
+        if hit is None:
+            decorated.append(item)
+            continue
+        first, last = hit.prescribed_bars[0], hit.prescribed_bars[-1]
+        where = f"bar {first}" if first == last else f"bars {first}-{last}"
+        decorated.append(
+            item.model_copy(
+                update={
+                    "message": (
+                        f"{item.message} ({where} is the prescribed "
+                        f"{hit.motif.role} entry — write it exactly as: "
+                        f"{hit.prescribed_lily})"
+                    )
+                }
+            )
+        )
+    return decorated
 
 
 def _editable_bars(
@@ -454,7 +535,7 @@ def _voice_to_convergence(
     """
     voice_spec = state.spec.voices_by_id[voice_id]
     materials = _materials_for(state, section, voice_id, motif_events)
-    feedback: list[FeedbackItem] = list(prior or [])
+    feedback = _entry_aware(list(prior or []), section, materials)
     rejected: VoicePart | None = (
         state.voices.get(voice_key(section.section_id, voice_id)) if prior else None
     )
@@ -481,7 +562,7 @@ def _voice_to_convergence(
                         skeleton=state.harmony.get(section.section_id),
                         part=rejected,
                         editable_bars=editable,
-                        feedback=feedback,
+                        feedback=_offered_feedback(feedback, editable, section),
                         siblings=siblings or {},
                     )
                 )
@@ -524,12 +605,16 @@ def _voice_to_convergence(
             )
             continue
 
-        feedback = validate_voice(
-            part,
-            voice_spec,
+        feedback = _entry_aware(
+            validate_voice(
+                part,
+                voice_spec,
+                section,
+                services.renderer,
+                services.workdir / f"{section.section_id}-{voice_id}-{cycle}",
+            ),
             section,
-            services.renderer,
-            services.workdir / f"{section.section_id}-{voice_id}-{cycle}",
+            materials,
         )
         if not feedback:
             return part
