@@ -113,6 +113,26 @@ def test_stored_states_replay_through_the_current_validators(
     assert all(finding.run == "20260101-000000" for finding in findings)
 
 
+def test_a_legacy_state_is_reported_not_fatal(tmp_path: Path) -> None:
+    """Old states predate schema changes (string few_shot_fragments, from
+    before StyleFragment). The audit reads history it did not write — a
+    boundary — so an unreadable state becomes a visible finding and the walk
+    continues, instead of one 2026-08-06 run killing the whole corpus."""
+    out = _corpus(tmp_path)
+    legacy = out / "legacy" / "runs" / "20260101-000001"
+    legacy.mkdir(parents=True)
+    broken = json.loads(_state().model_dump_json())
+    broken["style"]["few_shot_fragments"] = ["c'4 d'4 e'4 f'4 |"]
+    (legacy / "state.json").write_text(json.dumps(broken), encoding="utf-8")
+
+    findings = audit_states(out, RecordingRenderer(), tmp_path / "w")
+
+    legacy_findings = [f for f in findings if f.spec == "legacy"]
+    assert len(legacy_findings) == 1
+    assert legacy_findings[0].kind == "unreadable-legacy"
+    assert any(f.spec == "probe" for f in findings), "the walk continued"
+
+
 def test_the_report_summarizes_and_dumps_json(tmp_path: Path) -> None:
     out = _corpus(tmp_path)
     json_path = tmp_path / "report.json"

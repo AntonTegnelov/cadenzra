@@ -24,6 +24,8 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from cadenzra.app.pipeline import analyzed_motifs
 from cadenzra.interfaces.rendering import ScoreRenderer
 from cadenzra.model.feedback import FeedbackItem
@@ -182,9 +184,25 @@ def audit_states(
         for path, run_name in candidates:
             if not path.exists():
                 continue
-            state = PipelineState.model_validate_json(
-                path.read_text(encoding="utf-8")
-            )
+            try:
+                state = PipelineState.model_validate_json(
+                    path.read_text(encoding="utf-8")
+                )
+            except ValidationError as error:
+                # History the audit did not write: states from before a schema
+                # change (string fragments predate StyleFragment). A boundary,
+                # so the skip is a visible finding, never a silent drop — and
+                # never fatal to the rest of the corpus walk.
+                findings.append(
+                    Finding(
+                        spec=spec_dir.name,
+                        run=run_name,
+                        layer="state",
+                        kind="unreadable-legacy",
+                        message=str(error).splitlines()[0],
+                    )
+                )
+                continue
             findings += audit_state(
                 spec_dir.name, run_name, state, renderer, workdir
             )
