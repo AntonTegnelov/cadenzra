@@ -107,6 +107,17 @@ def main(argv: list[str] | None = None) -> int:
     replay_cmd.add_argument("--model", default=None)
     _add_log_level(replay_cmd)
 
+    audit_cmd = commands.add_parser(
+        "audit",
+        help="replay every stored state through the current validators — no API",
+    )
+    audit_cmd.add_argument("--out", type=Path, default=Path("out"))
+    audit_cmd.add_argument("--workdir", type=Path, default=Path("out/audit-work"))
+    audit_cmd.add_argument(
+        "--json", type=Path, default=None, help="also write the full report as JSON"
+    )
+    _add_log_level(audit_cmd)
+
     args = parser.parse_args(argv)
     try:
         return _run(args)
@@ -126,6 +137,17 @@ def _add_log_level(parser: argparse.ArgumentParser) -> None:
 
 def _run(args: argparse.Namespace) -> int:
     configure_logging()
+    if args.command == "audit":
+        from cadenzra.app.audit import run_audit
+        from cadenzra.rendering.lilypond import LilypondAdapter
+
+        print(
+            run_audit(
+                args.out, LilypondAdapter(), args.workdir, json_path=args.json
+            )
+        )
+        return 0
+
     config = RunConfig()
     if args.model:
         config = config.model_copy(update={"generation_model": args.model})
