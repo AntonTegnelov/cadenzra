@@ -21,7 +21,6 @@ from cadenzra.common.errors import LilypondCompileError
 from cadenzra.interfaces.rendering import ScoreRenderer
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.lyrics import (
-    DEVICE_VOCABULARY,
     TEXT_OBSERVABLE_DEVICES,
     DeviceObservation,
     LyricPlan,
@@ -96,15 +95,10 @@ def validate_lyric_plan(
                     section_id=directive.section_id,
                 )
             )
-        unknown = sorted(set(directive.devices) - DEVICE_VOCABULARY)
-        if unknown:
-            feedback.append(
-                _plan_item(
-                    f"section {directive.section_id} asks for {', '.join(unknown)}, "
-                    "which is not in the vocabulary",
-                    section_id=directive.section_id,
-                )
-            )
+        # Device membership is enforced twice upstream — the parser filters
+        # unknown names (the vocabulary is the contract) and the directive
+        # model raises on them — so no directive here can carry one. A third
+        # check that can never fire is theater, and it was removed.
 
     requested = set(spec.lyrics.devices) if spec.lyrics else set()
     if requested:
