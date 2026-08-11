@@ -141,9 +141,13 @@ def scaffold_bar_probe(lily_music: str, meter: MeterSpec) -> BarProbe | None:
         music = " ".join(segment.split())
         if not music.endswith("|"):
             return None
+        # The bar-number check is what catches a bar holding an exact
+        # multiple of the meter: a | only tests position modulo the bar,
+        # so two whole notes in one 4/4 bar pass every check — live, one
+        # such bar desynced its voice against the whole assembled score.
         lines.append(
             "\\score { \\new Voice \\absolute { "
-            f"{lily_time_command(meter)} {music}"
+            f"{lily_time_command(meter)} {music} \\barNumberCheck #2"
             " } \\layout {} }"
         )
         bar_of_line[len(lines)] = number

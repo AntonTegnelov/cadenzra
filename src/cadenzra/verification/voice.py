@@ -23,7 +23,7 @@ from cadenzra.model.artifacts import BarCheckWarning
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.primitives.pitch import Pitch
-from cadenzra.model.primitives.time import bar_containing, offset_of
+from cadenzra.model.primitives.time import bar_containing, offset_of, section_length
 from cadenzra.model.spec import VoiceSpec
 from cadenzra.model.structure import SectionPlan
 from cadenzra.model.voice import VoicePart
@@ -35,9 +35,13 @@ from cadenzra.notation.scaffold import (
     scaffold_bar_probe,
     scaffold_fragment,
 )
-from cadenzra.rendering.lilypond import first_error
+from cadenzra.rendering.lilypond import first_error, parse_warnings
 from cadenzra.verification.lyrics import lyric_misalignment
-from cadenzra.verification.midi_analysis import NoteEvent, extract_voice_notes
+from cadenzra.verification.midi_analysis import (
+    TICK_TOLERANCE,
+    NoteEvent,
+    extract_voice_notes,
+)
 
 SOURCE: Final = "validate_voice"
 
@@ -115,7 +119,13 @@ def validate_voice(
     feedback = [
         *_check_bar_checks_present(part, section),
         *_check_bars_fill_the_meter(
-            part, section, scaffolded, result.bar_check_warnings, renderer, workdir
+            part,
+            section,
+            scaffolded,
+            result.bar_check_warnings,
+            renderer,
+            workdir,
+            plays_past=_plays_past_the_section(result.midi_path, section),
         ),
         *_check_lyrics_align(part, section, result.raw_output),
         *_check_techniques(part, section),
@@ -209,6 +219,8 @@ def _check_bars_fill_the_meter(
     warnings: list[BarCheckWarning],
     renderer: ScoreRenderer,
     workdir: Path,
+    *,
+    plays_past: bool = False,
 ) -> list[FeedbackItem]:
     """Turn the compiler's bar checks into rehearsal notes.
 
@@ -219,8 +231,14 @@ def _check_bars_fill_the_meter(
     them one attempt at a time. When any check fails, each bar is recompiled
     as its own score so every broken bar is named at once; where the probe
     cannot represent or confirm the fragment, this compile's report stands.
+
+    `plays_past` triggers the probe with no warnings at all: a bar holding an
+    exact multiple of the meter passes every | (position is only tested
+    modulo the bar) and the count still matches — live, one such bar
+    desynced its voice against the whole assembled score. The overshoot in
+    the compiled MIDI is the one signal the checks cannot miss.
     """
-    if not warnings:
+    if not warnings and not plays_past:
         return []
     probed = _probed_bar_faults(part, section, renderer, workdir)
     if probed is not None:
@@ -256,17 +274,60 @@ def _probed_bar_faults(
         result = renderer.compile(probe.source, workdir / "bars")
     except LilypondCompileError:
         return None
-    feedback = []
-    seen: set[int] = set()
-    for warning in result.bar_check_warnings:
+    fill: dict[int, BarCheckWarning] = {}
+    holds: dict[int, int] = {}
+    for warning in parse_warnings(result.raw_output):
         bar = probe.bar_of_line.get(warning.line)
         if bar is None:
             return None
-        if bar in seen:
-            continue
-        seen.add(bar)
-        feedback.append(_bar_fill_item(part, section, bar=bar, warning=warning))
+        counted = re.match(r"Bar number is (?P<got>\d+); expected", warning.message)
+        if "bar check failed" in warning.message:
+            fill.setdefault(bar, warning)
+        elif counted is not None:
+            holds.setdefault(bar, int(counted["got"]) - 1)
+    feedback = []
+    for bar in sorted(fill.keys() | holds.keys()):
+        if bar in fill:
+            # The deficit is the sharper diagnosis; a short bar also trips
+            # the number check (a failed | does not advance the counter).
+            feedback.append(
+                _bar_fill_item(part, section, bar=bar, warning=fill[bar])
+            )
+        elif holds[bar] > 1:
+            feedback.append(
+                _item(
+                    part,
+                    section,
+                    bar=bar,
+                    message=(
+                        f"bar {bar} holds {holds[bar]} bars of music before "
+                        "its bar check; every bar ends with its own | — "
+                        "split it at each barline"
+                    ),
+                    evidence=f"Bar number is {holds[bar] + 1}; expected 2",
+                )
+            )
     return feedback or None
+
+
+def _plays_past_the_section(midi_path: Path | None, section: SectionPlan) -> bool:
+    """Whether the compiled part sounds past its section's final barline.
+
+    Over-length is the only direction MIDI can judge — a part ending in
+    rests legitimately sounds shorter than its section. No MIDI (the
+    scripted test fake) means no judgment, the `_check_range` convention.
+    """
+    if midi_path is None:
+        return False
+    notes = [
+        note
+        for voice in extract_voice_notes(mido.MidiFile(midi_path)).values()
+        for note in voice
+    ]
+    if not notes:
+        return False
+    extent = max(note.onset + note.duration for note in notes)
+    return extent > section_length(section.bars, section.meter) + TICK_TOLERANCE
 
 
 def _bar_fill_item(

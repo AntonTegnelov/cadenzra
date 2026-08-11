@@ -119,6 +119,26 @@ def test_every_broken_bar_is_reported_not_just_the_first(
     assert all("1/8 over" in item.message for item in feedback)
 
 
+def test_a_bar_holding_exactly_two_bars_of_music_is_caught(
+    renderer: LilypondAdapter, tmp_path: Path
+) -> None:
+    """A bar check only tests position modulo the bar length, so a bar
+    overflowing by exactly one full bar sails through every | and the
+    check count still matches — live, one such bar desynced its voice by a
+    bar against the whole score and the failure surfaced only at assembly,
+    as 'mid-measure time signature' warnings at every section seam. The
+    part plays past its section, which is the signal the checks cannot
+    see; the probe's bar-number check names the bar."""
+    music = "a'2 a'2 |\ng'2 g'2 e'2 e'2 |\nb'2 b'2 |"  # bar 2 holds two bars
+
+    feedback = _check(music, renderer, tmp_path, meter=FOUR_FOUR, bars=3)
+
+    assert feedback, "the overflow is invisible to bar checks but not to us"
+    assert any("bar 2" in item.message for item in feedback), [
+        item.message for item in feedback
+    ]
+
+
 def test_an_underfilled_bar_is_rejected_and_told_the_deficit(
     renderer: LilypondAdapter, tmp_path: Path
 ) -> None:
