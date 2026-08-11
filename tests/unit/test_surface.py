@@ -746,6 +746,34 @@ def test_a_cross_voice_repair_is_shown_the_lines_it_must_fit_against() -> None:
     assert "yours is the line that moves" in repairing
 
 
+def test_the_two_routine_constraints_are_stated_up_front() -> None:
+    """The frequency ledger's verdict on 134 stored runs: parallels (12,332
+    logged items) and held tones (1,670) fire routinely; everything else is
+    rare and taught by its rejection (docs/08). The two routine rules earn a
+    place in the first prompt — the held-tone rule beside the chord chart it
+    qualifies, the parallels rule even when no sibling lines are shown."""
+    skeleton = HarmonicSkeleton(
+        section_id="A",
+        events=[HarmonicEvent(offset=Fraction(0), duration=Fraction(7, 8), chord="Dm")],
+    )
+
+    harmonized = build_voice_prompt(_ctx(skeleton=skeleton))
+    unharmonized = build_voice_prompt(_ctx())
+    waived = build_voice_prompt(
+        _ctx(
+            skeleton=skeleton,
+            style=STYLE.model_copy(update={"parallel_fifths_policy": "allow"}),
+        )
+    )
+
+    assert "held for a beat or more" in harmonized
+    assert "belong to the chord" in harmonized
+    assert "held for a beat" not in unharmonized, "no chart, no held-tone rule"
+    assert "parallel fifths" in harmonized
+    assert "contrary or oblique" in harmonized
+    assert "parallel fifths" not in waived, "a waived rule stays unmentioned"
+
+
 def test_a_forbidding_style_tells_the_voice_to_avoid_parallels_up_front() -> None:
     """A double-fugue's first pass wrote 95 cross-voice violations, then
     repaired them thirty at a time — nothing had ever told the voice the one

@@ -72,8 +72,25 @@ def build_voice_prompt(ctx: VoiceContext) -> str:
         blocks.append(meter_clauses)
 
     if ctx.skeleton is not None and ctx.skeleton.events:
+        # The held-tone rule rides with the chart it qualifies: 1,670 logged
+        # rejections measured it as routine, which is the bar for a place in
+        # the first prompt (docs/08 — everything rarer is taught by its
+        # rejection instead).
         blocks.append(
-            "Harmony to write against:\n" + chord_chart(ctx.skeleton, ctx.section.meter)
+            "Harmony to write against:\n"
+            + chord_chart(ctx.skeleton, ctx.section.meter)
+            + "\nA note held for a beat or more must belong to the chord "
+            "sounding under it; notes shorter than a beat move freely as "
+            "passing tones."
+        )
+
+    if ctx.style.parallel_fifths_policy == "forbid" and not ctx.siblings:
+        # The other measured-routine rule (12,332 logged rejections). When
+        # siblings are shown, their block states it with the lines in view.
+        blocks.append(
+            "Avoid parallel fifths and octaves with the other voices: "
+            "approach any fifth or octave between two voices by contrary "
+            "or oblique motion, never with both moving the same way."
         )
 
     blocks.append(f"Write the {ctx.voice.voice_id} part for this section.")

@@ -34,6 +34,7 @@ from cadenzra.model.style import StylePack
 from cadenzra.notation.keys import prefer_flats
 from cadenzra.verification.harmony import chords_containing
 from cadenzra.verification.motifs import MAX_MOTIF_NOTES
+from cadenzra.verification.structure import DURATION_TOLERANCE
 
 STYLE_SYSTEM = """\
 You are a musician translating a style brief into concrete working material \
@@ -136,8 +137,10 @@ def build_plan_prompt(
 
     tempo = spec.tempo_bpm or 100
     blocks.append(
-        "Choose bar counts so the sections add up to about the requested duration. "
-        f"At {tempo} bpm a bar of 4/4 lasts about "
+        "Choose bar counts so the sections add up to about the requested "
+        "duration — the total is computed with each section's own tempo and "
+        f"must land within {DURATION_TOLERANCE:.0%} of the target. "
+        f"For reference, at {tempo} bpm a bar of 4/4 lasts about "
         f"{60 * 4 / tempo:.1f} seconds, and a bar of 7/8 about "
         f"{60 * 3.5 / tempo:.1f}."
     )
