@@ -73,3 +73,7 @@ def test_default_budgets_absorb_the_weak_tier() -> None:
     assert budgets.motifs == 8
     assert budgets.voice == 6
     assert budgets.lyric == 6
+    assert budgets.harmony == 6, (
+        "a fugue exposition's grid converged 3 -> 4 -> 1 complaints and died "
+        "one attempt short of done at the old default of 3"
+    )

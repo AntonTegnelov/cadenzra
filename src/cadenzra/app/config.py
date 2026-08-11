@@ -59,7 +59,10 @@ class RetryBudgets(BaseSettings):
     # costs a resume.
     structure: int = 3
     motifs: int = 8
-    harmony: int = 3
+    # A fugue exposition's grid answers pinned tones in every voice at once;
+    # with the constraints charted up front it converges, but 3 -> 4 -> 1
+    # complaints at a budget of 3 died one attempt short of done.
+    harmony: int = 6
     lyric_plan: int = 3
     lyric: int = 6
     voice: int = 6
