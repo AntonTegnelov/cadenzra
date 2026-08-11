@@ -116,6 +116,11 @@ def test_an_underfilled_bar_is_rejected_and_told_the_deficit(
 def test_a_note_above_the_ceiling_is_rejected_by_name(
     renderer: LilypondAdapter, tmp_path: Path
 ) -> None:
+    """The limit carries its LilyPond spelling and the message names the
+    octave shift that fits. Told only "above the ceiling of C5", the live
+    smoke's alto rewrote D-flat 5 as C-sharp 5 — a note that *reads* like a C
+    — and walked its violations down a semitone per attempt until the budget
+    died. The rehearsal note now hands over the one-edit answer instead."""
     music = "a'8 a' b' b' c''4. |\ng'8 g' a' a' e''4. |"
 
     feedback = _check(music, renderer, tmp_path)
@@ -123,8 +128,10 @@ def test_a_note_above_the_ceiling_is_rejected_by_name(
     assert len(feedback) == 1
     assert "E5" in feedback[0].message
     assert "above" in feedback[0].message
-    assert "C5" in feedback[0].message
+    assert "C5 (c'')" in feedback[0].message
     assert "bar 2" in feedback[0].message
+    assert "octave" in feedback[0].message
+    assert "E4 (e')" in feedback[0].message, "the in-range respelling is named"
 
 
 def test_a_note_below_the_floor_is_rejected_by_name(
@@ -134,7 +141,10 @@ def test_a_note_below_the_floor_is_rejected_by_name(
 
     feedback = _check(music, renderer, tmp_path)
 
-    assert any("below" in item.message and "G3" in item.message for item in feedback)
+    assert any("below" in item.message and "G3 (g)" in item.message for item in feedback)
+    assert any(
+        "octave" in item.message and "C4 (c')" in item.message for item in feedback
+    )
 
 
 def test_a_bar_of_out_of_range_notes_is_one_rehearsal_note(
@@ -154,6 +164,10 @@ def test_a_bar_of_out_of_range_notes_is_one_rehearsal_note(
     assert "5 notes" in item.message
     assert "B5" in item.message, "the farthest offender is named"
     assert "C5" in item.message, "so is the limit"
+    assert "octave" in item.message and "contour" in item.message, (
+        "a whole bar of high notes is one shape, and the shape an octave "
+        "down is the one-edit fix"
+    )
 
 
 def test_a_fragment_carrying_structural_commands_is_rejected(

@@ -259,13 +259,17 @@ def _check_range(
     feedback = []
     for (bar, above), pitches in sorted(offenders.items()):
         limit = voice_spec.range_high if above else voice_spec.range_low
+        # Both spellings, like `range_text`: told only "the ceiling of C5",
+        # the live smoke's alto respelled Db5 as cis'' — a note that *reads*
+        # like a C — and walked its violations down one semitone per attempt.
         side = f"the {part.voice_id} {'ceiling' if above else 'floor'} of "
-        side += limit.to_scientific()
+        side += f"{limit.to_scientific()} ({limit.to_lilypond()})"
+        remedy = _octave_remedy(pitches, voice_spec, above, section)
         if len(pitches) == 1:
             pitch = pitches[0]
             message = (
                 f"{pitch.to_scientific()} ({pitch.to_lilypond()}) in bar {bar} "
-                f"is {'above' if above else 'below'} {side}"
+                f"is {'above' if above else 'below'} {side}{remedy}"
             )
         else:
             extreme = max(pitches, key=lambda p: p.cents if above else -p.cents)
@@ -273,10 +277,45 @@ def _check_range(
                 f"bar {bar} has {len(pitches)} notes "
                 f"{'above' if above else 'below'} {side}, "
                 f"the {'highest' if above else 'lowest'} "
-                f"{extreme.to_scientific()} ({extreme.to_lilypond()})"
+                f"{extreme.to_scientific()} ({extreme.to_lilypond()}){remedy}"
             )
         feedback.append(_item(part, section, bar=bar, message=message))
     return feedback
+
+
+def _octave_remedy(
+    pitches: list[Pitch], voice_spec: VoiceSpec, above: bool, section: SectionPlan
+) -> str:
+    """The one-edit fix, when it exists: the same notes an octave over.
+
+    Range arithmetic the checker can do exactly, handed over rather than left
+    as a puzzle (docs/08 principle 2) — the same reasoning as naming "r16"
+    in a deficit. Empty when the shifted notes still miss the range; the
+    motif-time octave-fit check makes that rare for prescribed material, and
+    a free line that wide has no one-edit answer to name.
+    """
+    shifted = [
+        Pitch.from_midi_number(
+            pitch.midi_number + (-12 if above else 12),
+            prefer_flats=prefer_flats(section.key),
+        )
+        for pitch in pitches
+    ]
+    if not all(
+        pitch.is_within(voice_spec.range_low, voice_spec.range_high)
+        for pitch in shifted
+    ):
+        return ""
+    direction = "down" if above else "up"
+    if len(shifted) == 1:
+        fix = shifted[0]
+        return (
+            f" — the same note an octave {direction}, "
+            f"{fix.to_scientific()} ({fix.to_lilypond()}), is in range"
+        )
+    return (
+        f" — the same notes an octave {direction} keep the contour and fit"
+    )
 
 
 def _check_lyrics_align(
