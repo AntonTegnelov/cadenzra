@@ -304,6 +304,73 @@ def test_a_malformed_artifact_is_a_rejection_not_the_end_of_the_run() -> None:
     assert "bar 0" in seen[1][0]
 
 
+def test_a_voice_that_cannot_converge_yields_back_to_the_sweep(
+    tmp_path: Path,
+) -> None:
+    """A healthy sweep (148 -> 134 -> 111 live) died because one voice's
+    repair ran out of local attempts on noise. One voice's bad dice-run is
+    the sweep's problem, not the run's: the old part stays, its violations
+    stay on the board for the next sweep, and the plateau guard and section
+    budget still end a genuinely stuck loop loudly."""
+    from cadenzra.app.compose import ComposeServices, _rewrite_voices
+    from cadenzra.model.voice import VoicePart
+
+    soprano = ALTO.model_copy(update={"voice_id": "soprano"})
+    section = SECTION.model_copy(update={"active_voices": ["soprano", "alto"]})
+    state = PipelineState(
+        spec=PieceSpec(
+            title="T",
+            style_prompt="s",
+            voices=[soprano, ALTO],
+            meters_allowed=[SEVEN_EIGHT],
+            target_minutes=1.0,
+        ),
+        style=StylePack(),
+        structure=StructurePlan(sections=[section]),
+        voices={
+            voice_key("A", "soprano"): VoicePart(
+                section_id="A", voice_id="soprano", lily_music="OLD-soprano"
+            ),
+            voice_key("A", "alto"): VoicePart(
+                section_id="A", voice_id="alto", lily_music="OLD-alto"
+            ),
+        },
+    )
+    # The soprano always returns two bars for a one-bar section — a rejection
+    # no retry fixes; the alto repairs cleanly on its first try.
+    generator = ScriptedGenerator(
+        by_voice={("A", "soprano"): f"{GOOD} {GOOD}", ("A", "alto"): GOOD}
+    )
+    services = ComposeServices(
+        generator=generator,
+        renderer=RecordingRenderer(),
+        workdir=tmp_path,
+        budgets=RetryBudgets(voice=2),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+    note = FeedbackItem(
+        source="validate_section",
+        level="section",
+        section_id="A",
+        voice_id="soprano",
+        message="parallel octaves with the alto",
+    )
+    targets = {
+        ("A", "soprano"): [note],
+        ("A", "alto"): [note.model_copy(update={"voice_id": "alto"})],
+    }
+
+    repaired = _rewrite_voices(state, services, list(targets.values())[0], targets)
+
+    assert repaired.voices[voice_key("A", "soprano")].lily_music == "OLD-soprano", (
+        "the exhausted repair keeps the old part for the next sweep"
+    )
+    assert repaired.voices[voice_key("A", "alto")].lily_music == GOOD, (
+        "the sweep carried on past the exhausted voice"
+    )
+
+
 def test_repaired_voices_see_each_other_not_a_stale_snapshot() -> None:
     """Rewriting every named voice against the same snapshot means each avoids
     the others' *old* music, and the new pair can be exactly as parallel.

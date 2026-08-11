@@ -1392,15 +1392,37 @@ def _rewrite_voices(
 
     for (section_id, voice_id), items in targets.items():
         _log.info("rewriting %s in section %s", voice_id, section_id)
-        part = _voice_to_convergence(
-            state.model_copy(update={"feedback": feedback}),
-            services,
-            sections[section_id],
-            voice_id,
-            prior=_prioritized(items),
-            siblings=_siblings_of(state, sections[section_id], voice_id),
-            motif_events=motif_events,
-        )
+        try:
+            part = _voice_to_convergence(
+                state.model_copy(update={"feedback": feedback}),
+                services,
+                sections[section_id],
+                voice_id,
+                prior=_prioritized(items),
+                siblings=_siblings_of(state, sections[section_id], voice_id),
+                motif_events=motif_events,
+            )
+        except BudgetExhaustedError as error:
+            # One voice's bad run of attempts is the sweep's problem, not
+            # the run's: a healthy sweep (148 -> 134 -> 111 live) once died
+            # because a single repair rolled badly. The old part stays, its
+            # violations stay on the board for the next sweep, and the
+            # plateau guard and section budget still end a genuinely stuck
+            # loop loudly with the evidence in hand.
+            _log.warning(
+                "the %s repair in section %s ran out of attempts; the sweep "
+                "keeps the old part: %s",
+                voice_id,
+                section_id,
+                error,
+            )
+            if services.runlog is not None:
+                services.runlog.note(
+                    f"The {voice_id} repair in section {section_id} yielded",
+                    "Its attempts ran out mid-sweep; the old part stays and "
+                    f"the next sweep tries again. Last rejection: {error}",
+                )
+            continue
         # Accumulated, not collected: the next voice to be repaired has to see
         # this one's new line. Rewriting every named voice against the same
         # stale snapshot means each avoids the others' *old* music, and the new
