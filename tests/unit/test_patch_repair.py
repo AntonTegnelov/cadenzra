@@ -662,6 +662,60 @@ def test_an_open_final_bar_of_a_prescription_stays_the_models_to_complete(
     assert "c''4 b'8 a'8 g'4 |" in part.lily_music, "the open bar 2 stays as written"
 
 
+def test_an_open_prescription_is_decorated_as_a_beginning_not_a_whole(
+    tmp_path: Path,
+) -> None:
+    """A 7/8-of-a-bar prescription decorated with "write it exactly as" beside
+    a "bar is 1/8 short" deficit is two contradictory orders — the live viola
+    obeyed the wrong one five attempts running. An open prescription is a
+    beginning: the decoration must say so and say to complete the bar."""
+    from cadenzra.model.primitives.time import offset_of
+
+    motifs = MotifLibrary(
+        motifs={"m": Motif(motif_id="m", role="subject", lily_music=f"{GOOD} c''4 |")}
+    )
+    events = _events_for(
+        [(69, "8"), (69, "8"), (71, "8"), (71, "8"), (72, "4."), (72, "4")]
+    )
+    section = _loop_section(
+        MaterialEntry(motif_id="m", voice_id="alto", bar=1, relation="exact")
+    ).model_copy(update={"bars": 2})
+    short_item = FeedbackItem(
+        source="validate_voice",
+        level="voice",
+        section_id="A",
+        voice_id="alto",
+        location=offset_of(2, 1, SEVEN_EIGHT),
+        kind="meter",
+        message="bar 2 does not fill 7/8 (2+2+3); it is 1/2 short",
+    )
+    generator = ScriptedGenerator([f"{GOOD} c''4 b'8 a'8 g'8 |"])
+    services = _loop_services(generator, RecordingRenderer([clean()]), tmp_path)
+
+    _voice_to_convergence(
+        _loop_state(section, motifs=motifs).model_copy(
+            update={
+                "voices": {
+                    voice_key("A", "alto"): VoicePart(
+                        section_id="A", voice_id="alto", lily_music=f"{GOOD} c''4 |"
+                    )
+                }
+            }
+        ),
+        services,
+        section,
+        "alto",
+        prior=[short_item],
+        motif_events={"m": events},
+    )
+
+    ctx = generator.contexts[0]
+    (decorated,) = ctx.feedback
+    assert "write it exactly as" not in decorated.message
+    assert "begin it exactly with" in decorated.message
+    assert "complete" in decorated.message
+
+
 def test_a_compile_failure_is_never_patched(tmp_path: Path) -> None:
     """A part that does not compile has no trustworthy bar numbers to patch."""
     item = FeedbackItem(

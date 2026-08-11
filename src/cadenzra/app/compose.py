@@ -503,13 +503,24 @@ def _entry_aware(
             continue
         first, last = hit.prescribed_bars[0], hit.prescribed_bars[-1]
         where = f"bar {first}" if first == last else f"bars {first}-{last}"
+        text = hit.prescribed_lily
+        assert text is not None  # `prescribed` is filtered on it above
+        if text.rstrip().endswith("|"):
+            advice = f"write it exactly as: {text}"
+        else:
+            # An open prescription is a beginning, not a whole bar — saying
+            # "exactly" beside a deficit item gave the live viola two
+            # contradictory orders, and it obeyed the wrong one five times.
+            advice = (
+                f"begin it exactly with: {text} — its final bar is left "
+                "open; complete that bar"
+            )
         decorated.append(
             item.model_copy(
                 update={
                     "message": (
                         f"{item.message} ({where} is the prescribed "
-                        f"{hit.motif.role} entry — write it exactly as: "
-                        f"{hit.prescribed_lily})"
+                        f"{hit.motif.role} entry — {advice})"
                     )
                 }
             )
