@@ -10,6 +10,8 @@ concerto code path; the style pack and spec drive the planner, and a form the
 system has never seen works the same way (docs/04).
 """
 
+from fractions import Fraction
+
 from cadenzra.llm.prompts.surface import (
     beat_text,
     chord_chart,
@@ -30,6 +32,7 @@ from cadenzra.model.spec import PieceSpec
 from cadenzra.model.structure import MaterialBrief, SectionPlan, StructurePlan
 from cadenzra.model.style import StylePack
 from cadenzra.notation.keys import prefer_flats
+from cadenzra.verification.harmony import chords_containing
 
 STYLE_SYSTEM = """\
 You are a musician translating a style brief into concrete working material \
@@ -319,6 +322,13 @@ def build_harmony_prompt(
             "them whatever you choose. Any chord sounding under one of them "
             "must contain it:\n" + _pinned_chart(pinned, section)
         )
+        options = _pinned_options(pinned, section)
+        if options:
+            blocks.append(
+                "Where two or more fixed notes sound through the same beat, "
+                "the chord there must hold them all. Chords that do:\n"
+                + options
+            )
 
     beats = section.meter.units_per_bar
     blocks.append(
@@ -353,3 +363,42 @@ def _pinned_chart(pinned: list[PinnedTone], section: SectionPlan) -> str:
     return "\n".join(
         f"  bar {bar}: " + " | ".join(items) for bar, items in sorted(by_bar.items())
     )
+
+
+def _pinned_options(pinned: list[PinnedTone], section: SectionPlan) -> str:
+    """Worked chords for every beat that two or more pinned tones cover.
+
+    A combined-subjects section pins multi-note sets on nearly every beat,
+    and a grid corrected one violation at a time died at its budget solving
+    what this chart answers up front. Same arithmetic as the rejection's
+    suggestions (`chords_containing`), moved before the first attempt;
+    single-note beats stay out — the note chart already covers them.
+    """
+    flats = prefer_flats(section.key)
+    beat = section.meter.bar_length / section.meter.units_per_bar
+    covered: dict[Fraction, dict[int, Pitch]] = {}
+    for tone in pinned:
+        start, end = tone.onset, tone.onset + tone.duration
+        slot = (start // beat) * beat
+        while slot < end:
+            if start <= slot and slot + beat <= end:
+                pitch = Pitch.from_midi_number(tone.midi_pitch, prefer_flats=flats)
+                covered.setdefault(slot, {}).setdefault(pitch.pc12, pitch)
+            slot += beat
+    lines = []
+    for slot, tones in sorted(covered.items()):
+        if len(tones) < 2:
+            continue
+        bar, beat_number = bar_beat_of(slot, section.meter)
+        names = " + ".join(
+            f"{pitch.to_scientific()} ({pitch.to_lilypond()})"
+            for pitch in tones.values()
+        )
+        examples = chords_containing(set(tones), flats)
+        answer = (
+            ", ".join(examples)
+            if examples
+            else "no single chord holds them; change chords between the notes"
+        )
+        lines.append(f"  bar {bar}, beat {beat_text(beat_number)}: {names} — {answer}")
+    return "\n".join(lines)

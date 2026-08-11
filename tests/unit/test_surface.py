@@ -507,6 +507,42 @@ def test_the_harmony_prompt_charts_the_pinned_entry_tones() -> None:
     assert "must contain" not in plain
 
 
+def test_jointly_pinned_beats_come_with_worked_chord_options() -> None:
+    """A combined-subjects section pins multi-note sets on nearly every beat,
+    and a grid corrected one violation at a time died at its budget solving
+    what the checker could have answered up front: for every beat where two
+    or more fixed notes sound, the chords that hold them all. Single-note
+    beats stay out — the note chart already covers them."""
+    from fractions import Fraction as F
+
+    from cadenzra.llm.prompts.structured import build_harmony_prompt
+    from cadenzra.model.contexts import PinnedTone
+    from cadenzra.notation.chords import parse_chord_symbol
+    from cadenzra.verification.section import permitted_pitch_classes
+
+    section = SECTION.model_copy(update={"meter": simple_meter(4, 4)})
+    pinned = [
+        PinnedTone(voice_id="viola", midi_pitch=60, onset=F(0), duration=F(1, 2)),
+        PinnedTone(voice_id="violin1", midi_pitch=62, onset=F(0), duration=F(1, 4)),
+        PinnedTone(voice_id="cello", midi_pitch=55, onset=F(3, 4), duration=F(1, 4)),
+    ]
+
+    prompt = build_harmony_prompt(section, STYLE, [], None, None, [], pinned=pinned)
+
+    assert "hold them all" in prompt
+    line = next(
+        row for row in prompt.splitlines() if row.strip().startswith("bar 1, beat 1")
+    )
+    assert "C4" in line and "D4" in line
+    suggestion = line.rsplit("— ", 1)[1].split(",")[0].strip()
+    assert {0, 2} <= permitted_pitch_classes(
+        parse_chord_symbol(suggestion), strict=True
+    ), "the offered chord holds both pinned notes as real tones"
+    assert "beat 4" not in prompt.split("hold them all")[1], (
+        "a lone pinned note needs no options line"
+    )
+
+
 def test_each_motif_is_told_the_meter_it_will_be_checked_in() -> None:
     """The prompt said "Write in 7/8" once for the whole batch while the
     validator checked each motif in its own declaring section's meter — an

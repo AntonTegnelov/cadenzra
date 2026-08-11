@@ -219,7 +219,7 @@ def check_entries_against_grid(
         ]
         if not missing:
             continue
-        examples = _chords_containing(
+        examples = chords_containing(
             {pitch.pc12 for _, pitch in requirements}, flats
         )
         message = (
@@ -265,7 +265,7 @@ _ROOTS_SHARP: Final = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#
 _ROOTS_FLAT: Final = ("C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B")
 
 
-def _chords_containing(pcs: set[int], flats: bool) -> list[str]:
+def chords_containing(pcs: set[int], flats: bool) -> list[str]:
     """A few chord symbols holding every pc in `pcs` as real chord tones.
 
     Arithmetic over the checker's own vocabulary — every suggestion passes
