@@ -175,19 +175,19 @@ def _check_parallels(
     names = sorted(voices)
     for upper_index, upper in enumerate(names):
         for lower in names[upper_index + 1 :]:
-            for interval, onsets in parallel_runs(
+            for interval, onsets, pitches in parallel_runs(
                 voices[upper], voices[lower], beat=beat
             ):
                 feedback += _routed_pair_items(
-                    upper, lower, interval, onsets, section, spans
+                    upper, lower, interval, onsets, pitches, section, spans
                 )
     return feedback
 
 
 def parallel_runs(
     upper: list[NoteEvent], lower: list[NoteEvent], *, beat: Fraction
-) -> list[tuple[str, list[Fraction]]]:
-    """Maximal passages of parallel motion, as (interval, onsets) runs.
+) -> list[tuple[str, list[Fraction], list[tuple[int, int]]]]:
+    """Maximal passages of parallel motion, as (interval, onsets, pitches) runs.
 
     One passage is one fault. The old per-attack accounting turned a five-note
     parallel run into four violations, which is how a repair prompt ends up
@@ -205,8 +205,9 @@ def parallel_runs(
         for pair in _simultaneous_pairs(upper, lower)
         if pair[0].onset % beat == 0
     ]
-    runs: list[tuple[str, list[Fraction]]] = []
+    runs: list[tuple[str, list[Fraction], list[tuple[int, int]]]] = []
     current: list[Fraction] = []
+    current_pitches: list[tuple[int, int]] = []
     current_interval = ""
     previous_index = -2
     for index, ((first_up, first_down), (next_up, next_down)) in enumerate(
@@ -228,19 +229,24 @@ def parallel_runs(
         interval = "octaves" if first == 0 else "fifths"
         if current and index == previous_index + 1 and interval == current_interval:
             current.append(next_up.onset)
+            current_pitches.append((next_up.midi_pitch, next_down.midi_pitch))
         else:
             if current:
-                runs.append((current_interval, current))
+                runs.append((current_interval, current, current_pitches))
             # The approach attack opens the run: the fix for a parallel
             # "into the downbeat" usually lives in the note before it, and a
             # patch offered only the arrival bar can never make that edit —
             # a live loop died on exactly one such fault, three sweeps
             # running.
             current = [first_up.onset, next_up.onset]
+            current_pitches = [
+                (first_up.midi_pitch, first_down.midi_pitch),
+                (next_up.midi_pitch, next_down.midi_pitch),
+            ]
             current_interval = interval
         previous_index = index
     if current:
-        runs.append((current_interval, current))
+        runs.append((current_interval, current, current_pitches))
     return runs
 
 
@@ -249,6 +255,7 @@ def _routed_pair_items(
     lower_name: VoiceId,
     interval: str,
     onsets: list[Fraction],
+    pitches: list[tuple[int, int]],
     section: SectionPlan,
     spans: dict[VoiceId, list[tuple[Fraction, Fraction]]],
 ) -> list[FeedbackItem]:
@@ -274,9 +281,20 @@ def _routed_pair_items(
         )
     )
     each = "the second one" if len(onsets) == 1 else "each"
+    flats = prefer_flats(section.key)
+    notes = "; ".join(
+        f"{format_bar_beat(onset, section.meter)}: "
+        f"{Pitch.from_midi_number(up, prefer_flats=flats).to_lilypond()} against "
+        f"{Pitch.from_midi_number(down, prefer_flats=flats).to_lilypond()}"
+        for onset, (up, down) in list(zip(onsets, pitches, strict=False))[:3]
+    )
+    # The colliding notes are named — the patcher was left to extract the
+    # simultaneities from the sibling line itself, and the measured tail
+    # fix rate said it mostly could not.
     message = (
-        f"{upper_name} and {lower_name} move in parallel {interval} {where}; "
-        f"approach {each} by contrary or oblique motion"
+        f"{upper_name} and {lower_name} move in parallel {interval} {where} "
+        f"({notes}); approach {each} by contrary or oblique motion — change "
+        "one of the named notes"
     )
     pair = tuple(sorted((upper_name, lower_name)))
 

@@ -103,6 +103,25 @@ def test_parallel_fifths_are_caught_and_located() -> None:
     )
 
 
+def test_parallels_name_the_colliding_notes() -> None:
+    """The message hands over the simultaneities, not just the passage.
+
+    The measured tail fix rate said the patcher mostly could not extract
+    the colliding notes from the sibling line itself — a converging live
+    loop ground down at ~1 fault per sweep and hit the budget. The
+    arithmetic was already computed; the message must not discard it.
+    """
+    voices = _voices(soprano=[67, 69], bass=[60, 62])
+
+    (item,) = validate_section(voices, _section(), NO_HARMONY, _style())
+
+    assert "bar 1, beat 1: c' against g'" in item.message, (
+        "pitch order matches the name order in 'bass and soprano'"
+    )
+    assert "bar 1, beat 2: d' against a'" in item.message
+    assert "change one of the named notes" in item.message
+
+
 def test_parallel_octaves_are_caught() -> None:
     voices = _voices(soprano=[72, 74], bass=[60, 62])
 
