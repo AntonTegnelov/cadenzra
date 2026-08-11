@@ -11,6 +11,7 @@ system has never seen works the same way (docs/04).
 """
 
 from cadenzra.llm.prompts.surface import (
+    beat_text,
     chord_chart,
     dynamics_text,
     range_text,
@@ -18,13 +19,17 @@ from cadenzra.llm.prompts.surface import (
     rhythmic_cells_text,
     section_text,
 )
+from cadenzra.model.contexts import PinnedTone
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.motif import Motif
 from cadenzra.model.primitives.meter import MeterSpec
+from cadenzra.model.primitives.pitch import Pitch
+from cadenzra.model.primitives.time import bar_beat_of
 from cadenzra.model.spec import PieceSpec
 from cadenzra.model.structure import MaterialBrief, SectionPlan, StructurePlan
 from cadenzra.model.style import StylePack
+from cadenzra.notation.keys import prefer_flats
 
 STYLE_SYSTEM = """\
 You are a musician translating a style brief into concrete working material \
@@ -266,6 +271,8 @@ def build_harmony_prompt(
     previous_tail: HarmonicSkeleton | None,
     previous_section: SectionPlan | None,
     feedback: list[FeedbackItem] | None = None,
+    *,
+    pinned: list[PinnedTone] | None = None,
 ) -> str:
     """One section's progression, with the previous section's tail as context.
 
@@ -301,6 +308,13 @@ def build_harmony_prompt(
             f"than fights it:\n  {motif.lily_music}"
         )
 
+    if pinned:
+        blocks.append(
+            "These notes are fixed before you write — the entries will play "
+            "them whatever you choose. Any chord sounding under one of them "
+            "must contain it:\n" + _pinned_chart(pinned, section)
+        )
+
     beats = section.meter.units_per_bar
     blocks.append(
         f"Section {section.section_id} is {section.bars} bars of "
@@ -313,3 +327,24 @@ def build_harmony_prompt(
     if notes:
         blocks.append(notes)
     return "\n\n".join(blocks)
+
+
+def _pinned_chart(pinned: list[PinnedTone], section: SectionPlan) -> str:
+    """The pinned tones bar by bar, in the register a musician reads."""
+    flats = prefer_flats(section.key)
+    by_bar: dict[int, list[str]] = {}
+    for tone in sorted(pinned, key=lambda t: (t.onset, t.voice_id)):
+        bar, beat = bar_beat_of(tone.onset, section.meter)
+        end_bar, end_beat = bar_beat_of(tone.onset + tone.duration, section.meter)
+        pitch = Pitch.from_midi_number(tone.midi_pitch, prefer_flats=flats)
+        where = (
+            f"beats {beat_text(beat)}-{beat_text(end_beat)}"
+            if end_bar == bar
+            else f"beat {beat_text(beat)} to bar {end_bar}, beat {beat_text(end_beat)}"
+        )
+        by_bar.setdefault(bar, []).append(
+            f"{pitch.to_scientific()} ({tone.voice_id}, {where})"
+        )
+    return "\n".join(
+        f"  bar {bar}: " + " | ".join(items) for bar, items in sorted(by_bar.items())
+    )

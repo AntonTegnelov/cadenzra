@@ -200,6 +200,7 @@ class GeminiGenerator:
                 ctx.previous_skeleton,
                 ctx.previous_section,
                 ctx.feedback,
+                pinned=ctx.pinned,
             ),
             tool=write_harmony_schema(ctx.section.bars),
             turn=TurnInfo(

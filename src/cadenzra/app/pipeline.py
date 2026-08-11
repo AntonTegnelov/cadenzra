@@ -42,7 +42,11 @@ from cadenzra.model.state import PipelineState, attempt_key
 from cadenzra.model.structure import SectionPlan, StructurePlan
 from cadenzra.model.style import StylePack
 from cadenzra.notation.scaffold import scaffold_fragment
-from cadenzra.verification.harmony import check_entries_against_grid, validate_harmony
+from cadenzra.verification.harmony import (
+    check_entries_against_grid,
+    pinned_entry_tones,
+    validate_harmony,
+)
 from cadenzra.verification.lyrics import validate_lyric_plan
 from cadenzra.verification.midi_analysis import NoteEvent, extract_voice_notes
 from cadenzra.verification.motifs import validate_motifs
@@ -250,12 +254,15 @@ def _harmony_for(
     """
     motifs = _motifs_in(state, section)
 
+    pinned = pinned_entry_tones(section, motif_notes or {})
+
     def generate(feedback: list[FeedbackItem]) -> HarmonicSkeleton:
         return services.generator.generate_harmony(
             HarmonyContext(
                 section=section,
                 style=style,
                 motifs=motifs,
+                pinned=pinned,
                 previous_section=previous_section,
                 previous_skeleton=previous_skeleton,
                 feedback=feedback,

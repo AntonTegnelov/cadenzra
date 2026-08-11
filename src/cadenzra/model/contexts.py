@@ -6,6 +6,8 @@ prompt by the adapter. Nothing here is prompt text; nothing here is internal
 coordinates leaking outward either. This is the boundary's vocabulary.
 """
 
+from fractions import Fraction
+
 from pydantic import BaseModel, Field
 
 from cadenzra.model.feedback import FeedbackItem
@@ -65,12 +67,29 @@ class MotifContext(BaseModel, frozen=True):
     feedback: list[FeedbackItem] = Field(default_factory=list)
 
 
+class PinnedTone(BaseModel, frozen=True):
+    """One sustained entry note the grid must fit.
+
+    Realized under the entry's relation and placed at its bar — fixed before
+    any harmony is written, because the entry cannot change. A fugue
+    exposition pins tones in every voice at once, and a model shown them
+    only as violations fixes one and breaks another until the budget dies.
+    """
+
+    voice_id: VoiceId
+    midi_pitch: int
+    # Offset from the section start, and how long the note sounds.
+    onset: Fraction
+    duration: Fraction
+
+
 class HarmonyContext(BaseModel, frozen=True):
     """One section's harmony, with the previous section's tail for continuity."""
 
     section: SectionPlan
     style: StylePack
     motifs: list[Motif] = Field(default_factory=list)
+    pinned: list[PinnedTone] = Field(default_factory=list)
     previous_section: SectionPlan | None = None
     previous_skeleton: HarmonicSkeleton | None = None
     feedback: list[FeedbackItem] = Field(default_factory=list)

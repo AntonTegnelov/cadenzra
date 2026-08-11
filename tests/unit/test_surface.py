@@ -456,6 +456,34 @@ def test_every_regenerating_layer_shows_the_model_why_it_was_rejected() -> None:
         assert "as little else as possible" in prompt
 
 
+def test_the_harmony_prompt_charts_the_pinned_entry_tones() -> None:
+    """The grid must fit tones the entries pin, and a model shown them only
+    as violations fixes one and breaks another until the budget dies. The
+    chart hands every constraint over before the first attempt, in the
+    musician register — bars and beats, no offsets."""
+    from cadenzra.llm.prompts.structured import build_harmony_prompt
+    from cadenzra.model.contexts import PinnedTone
+
+    pinned = [
+        PinnedTone(
+            voice_id="cello",
+            midi_pitch=67,
+            onset=Fraction(7, 8),
+            duration=Fraction(1, 2),
+        )
+    ]
+
+    charted = build_harmony_prompt(SECTION, STYLE, [], None, None, [], pinned=pinned)
+    plain = build_harmony_prompt(SECTION, STYLE, [], None, None, [])
+
+    assert "G4" in charted
+    assert "cello" in charted
+    assert "bar 2" in charted, "7/8 offset 7/8 is bar 2, beat 1"
+    assert "must contain" in charted
+    assert "Fraction" not in charted and "offset" not in charted
+    assert "must contain" not in plain
+
+
 def test_each_motif_is_told_the_meter_it_will_be_checked_in() -> None:
     """The prompt said "Write in 7/8" once for the whole batch while the
     validator checked each motif in its own declaring section's meter — an

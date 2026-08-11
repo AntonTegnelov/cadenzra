@@ -127,6 +127,105 @@ def test_a_tonal_answer_is_pinned_at_the_literal_fifth() -> None:
     assert len(clashes) == 1, "Eb+7 = Bb bites over A major, exactly like 'P5 up'"
 
 
+def test_pinned_tones_hand_the_grid_its_constraints_up_front() -> None:
+    """A fugue exposition pins tones in every voice at once, and a model shown
+    them only as violations fixes one and breaks another until the budget
+    dies (live: 8 complaints, then 4, then 8 different ones). The system
+    knows every constraint before the first attempt — realized under the
+    entry's relation, placed at its bar — so it hands them over. Notes
+    shorter than a beat are left free; they read as passing tones."""
+    from cadenzra.verification.harmony import pinned_entry_tones
+
+    with_eighth = _notes([60, 55, 63]) + [
+        NoteEvent(
+            midi_pitch=62,
+            onset=Fraction(3, 4),
+            duration=Fraction(1, 8),
+            velocity=90,
+            channel=0,
+        )
+    ]
+    entry = MaterialEntry(
+        motif_id="subject1", voice_id="viola", bar=2, relation="P5 up"
+    )
+
+    pinned = pinned_entry_tones(_section(entry), {"subject1": with_eighth})
+
+    assert [tone.midi_pitch for tone in pinned] == [67, 62, 70], (
+        "realized at the entry's relation; the eighth note is left free"
+    )
+    assert pinned[0].voice_id == "viola"
+    assert pinned[0].onset == Fraction(1), "placed at bar 2 of 4/4"
+
+
+def test_a_tonal_answer_pins_its_fifth_up_realization() -> None:
+    from cadenzra.verification.harmony import pinned_entry_tones
+
+    entry = MaterialEntry(
+        motif_id="subject1", voice_id="viola", bar=1, relation="tonal answer"
+    )
+
+    pinned = pinned_entry_tones(_section(entry), {"subject1": SUBJECT})
+
+    assert [tone.midi_pitch for tone in pinned] == [67, 62, 70, 69]
+
+
+def test_the_harmony_loop_threads_the_pinned_tones() -> None:
+    from pathlib import Path
+
+    from cadenzra.app.config import RetryBudgets
+    from cadenzra.app.pipeline import LayerServices, _harmony_for
+    from cadenzra.model.harmony import HarmonicEvent, HarmonicSkeleton
+    from cadenzra.model.primitives.pitch import Pitch
+    from cadenzra.model.spec import PieceSpec, VoiceSpec
+    from cadenzra.model.state import PipelineState
+    from cadenzra.model.style import StylePack
+    from tests.fakes.generator import ScriptedGenerator
+
+    fitting = HarmonicSkeleton(
+        section_id="Exposition1",
+        events=[
+            HarmonicEvent(offset=Fraction(0), duration=Fraction(4), chord="Cm")
+        ],
+    )
+    generator = ScriptedGenerator(skeletons=[fitting])
+    cello = VoiceSpec(
+        voice_id="cello",
+        kind="instrument",
+        range_low=Pitch(step="C", octave=2),
+        range_high=Pitch(step="G", octave=4),
+        midi_program=42,
+    )
+    spec = PieceSpec(
+        title="T",
+        style_prompt="s",
+        voices=[cello],
+        meters_allowed=[FOUR_FOUR],
+        target_minutes=1.0,
+    )
+    services = LayerServices(
+        generator=generator,
+        renderer=None,  # type: ignore[arg-type]
+        workdir=Path("/tmp/unused"),
+        budgets=RetryBudgets(),
+    )
+    # Cm-compatible subject so the scripted grid validates: C-G-Eb-D quarters.
+    subject = _notes([60, 55, 63, 62])
+
+    _harmony_for(
+        PipelineState(spec=spec, style=StylePack()),
+        services,
+        _section(ENTRY),
+        StylePack(),
+        previous_section=None,
+        previous_skeleton=None,
+        motif_notes={"subject1": subject},
+    )
+
+    (ctx,) = generator.harmony_contexts
+    assert [tone.midi_pitch for tone in ctx.pinned] == [60, 55, 63, 62]
+
+
 def test_a_passing_clash_is_not_flagged() -> None:
     """Same threshold as the downstream held-tone check: a plan-time pass must
     guarantee no unfixable held-tone downstream, no more and no less."""

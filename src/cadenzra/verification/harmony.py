@@ -10,6 +10,7 @@ docs/08 principle 3).
 from fractions import Fraction
 from typing import Final
 
+from cadenzra.model.contexts import PinnedTone
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.primitives.ids import MotifId
@@ -213,6 +214,45 @@ def check_entries_against_grid(
                     )
                 )
     return feedback
+
+
+def pinned_entry_tones(
+    section: SectionPlan, motif_notes: dict[MotifId, list[NoteEvent]]
+) -> list[PinnedTone]:
+    """Every entry note long enough to pin the grid, realized and placed.
+
+    Handed to the harmony prompt before the first attempt, because the model
+    cannot satisfy constraints it cannot see — discovered through violations,
+    a fugue exposition's pinned tones are fixed one at a time while another
+    breaks (docs/08 principle 2: hand over the answer, not the puzzle).
+    Notes shorter than a beat are left free; they read as passing tones, and
+    the held-tone check rarely reaches them.
+    """
+    beat = section.meter.bar_length / section.meter.units_per_bar
+    pinned = []
+    for entry in section.material:
+        subject = motif_notes.get(entry.motif_id)
+        if not subject:
+            continue
+        try:
+            relation = parse_relation(entry.relation)
+        except UnknownRelationError:
+            continue  # the structure validator owns unknown relations
+        predicted = predicted_entry(subject, relation.kind, relation.semitones)
+        if predicted is None:
+            continue
+        shift = offset_of(entry.bar, 1, section.meter) - subject[0].onset
+        pinned += [
+            PinnedTone(
+                voice_id=entry.voice_id,
+                midi_pitch=note.midi_pitch,
+                onset=note.onset + shift,
+                duration=note.duration,
+            )
+            for note in predicted
+            if note.duration >= beat
+        ]
+    return pinned
 
 
 def predicted_entry(
