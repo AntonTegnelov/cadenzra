@@ -83,6 +83,10 @@ def test_default_budgets_absorb_the_weak_tier() -> None:
 
     budgets = RetryBudgets()
 
+    assert budgets.structure == 6, (
+        "the style pack rides this budget and now earns real rejections; a "
+        "live loop went 3 -> 4 -> 1 items and died one attempt from clean"
+    )
     assert budgets.motifs == 8
     assert budgets.voice == 6
     assert budgets.lyric == 6

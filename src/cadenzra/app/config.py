@@ -61,7 +61,10 @@ class RetryBudgets(BaseSettings):
     # runs the weakest model, whose higher correction rate is priced in, and
     # an extra lite-tier attempt costs pennies while a budget_exhausted run
     # costs a resume.
-    structure: int = 3
+    # The style pack rides this budget too, and it now earns real
+    # rejections (compile checks, coverage, coherence) — a live loop went
+    # 3 -> 4 -> 1 items and died one attempt from clean at the old 3.
+    structure: int = 6
     motifs: int = 8
     # A fugue exposition's grid answers pinned tones in every voice at once;
     # with the constraints charted up front it converges, but 3 -> 4 -> 1
