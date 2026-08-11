@@ -129,23 +129,25 @@ def validate_motifs(
             continue
         feedback += _check_range_under_relations(motif, notes, events, plan, spec)
 
-    feedback += _check_entry_collisions(events_by_motif, plan, parallel_policy)
+    feedback += _check_entry_collisions(events_by_motif, plan, spec, parallel_policy)
     return feedback
 
 
 def _check_entry_collisions(
     events: dict[str, list[NoteEvent]],
     plan: StructurePlan,
+    spec: PieceSpec,
     policy: str,
 ) -> list[FeedbackItem]:
     """Overlapping prescribed entries, checked against each other now.
 
     Two subjects entered together as the plan declares can move in parallel
     octaves — a contradiction with no fixable side once the piece is built,
-    because both lines are prescribed note-for-note. Exact, transposed and
-    inverted entries are fully determined the moment the motifs exist, so
-    the collision costs nothing beyond the compiles already made. Tonal
-    answers stay unpredicted, as everywhere else.
+    because both lines are prescribed note-for-note. Each entry is placed at
+    the register the prescription will choose — the same whole-octave
+    arithmetic — because parallels are octave-sensitive: a live stretto's
+    written fourths became sounding fifths when one voice was lifted to
+    clear its floor, and the check had cleared the plan.
     """
     if policy != "forbid":
         return []
@@ -164,12 +166,25 @@ def _check_entry_collisions(
             predicted = predicted_entry(notes, relation.kind, relation.semitones)
             if predicted is None:
                 continue
+            voice = spec.voices_by_id[entry.voice_id]
+            displacement = octave_displacement(
+                [note.midi_pitch for note in predicted],
+                voice.range_low,
+                voice.range_high,
+            )
+            if displacement is None:
+                continue  # the octave-fit check owns this failure
             shift = offset_of(entry.bar, 1, section.meter)
             placed.append(
                 (
                     entry,
                     [
-                        note.model_copy(update={"onset": note.onset + shift})
+                        note.model_copy(
+                            update={
+                                "onset": note.onset + shift,
+                                "midi_pitch": note.midi_pitch + displacement,
+                            }
+                        )
                         for note in predicted
                     ],
                 )

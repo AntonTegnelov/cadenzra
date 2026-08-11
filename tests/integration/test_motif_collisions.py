@@ -155,6 +155,73 @@ def test_a_motif_with_no_whole_octave_fit_is_rejected(tmp_path: Path) -> None:
     assert any("wide" in item.message for item in feedback)
 
 
+def test_entries_collide_at_the_register_the_prescription_chooses(
+    tmp_path: Path,
+) -> None:
+    """A live stretto slipped through: at written pitch the two S1 statements
+    move in fourths, but the prescription lifts the violin an octave to clear
+    its G3 floor, and fourths inverted become fifths. The collision check
+    must place each entry where the prescription will — the same
+    whole-octave arithmetic — or it clears plans the assembly then rejects
+    with no voice free to fix."""
+    violin1 = VoiceSpec(
+        voice_id="violin1",
+        kind="instrument",
+        range_low=Pitch(step="G", octave=3),
+        range_high=Pitch(step="E", octave=6),
+        midi_program=41,
+    )
+    viola = VoiceSpec(
+        voice_id="viola",
+        kind="instrument",
+        range_low=Pitch(step="C", octave=3),
+        range_high=Pitch(step="E", octave=5),
+        midi_program=42,
+    )
+    spec = SPEC.model_copy(update={"voices": [violin1, viola]})
+    plan = StructurePlan(
+        sections=[
+            SectionPlan(
+                section_id="A",
+                bars=4,
+                meter=FOUR_FOUR,
+                key="c minor",
+                tempo_bpm=90,
+                texture="imitative",
+                dynamics=DynamicsPlan(start="mf"),
+                active_voices=["violin1", "viola"],
+                material=[
+                    MaterialEntry(
+                        motif_id="s1", voice_id="violin1", bar=1, relation="exact"
+                    ),
+                    MaterialEntry(
+                        motif_id="s1", voice_id="viola", bar=2, relation="exact"
+                    ),
+                ],
+            )
+        ]
+    )
+    library = MotifLibrary(
+        motifs={
+            "s1": Motif(
+                motif_id="s1",
+                role="subject",
+                lily_music="c'4. g8 c'4 bes8 g | aes4 f8 d g4 c' |",
+            )
+        }
+    )
+
+    feedback = validate_motifs(
+        library, plan, spec, LilypondAdapter(), tmp_path, parallel_policy="forbid"
+    )
+
+    collision = [item for item in feedback if "parallel" in item.message]
+    assert collision, "the stretto's fifths are caught before anything is built"
+    assert any(
+        "violin1" in item.message and "viola" in item.message for item in collision
+    )
+
+
 def test_a_permissive_policy_skips_the_collision_check(tmp_path: Path) -> None:
     feedback = validate_motifs(
         _library("c''4 d''4 e''4 f''4 |", "c'4 d'4 e'4 f'4 |"),
