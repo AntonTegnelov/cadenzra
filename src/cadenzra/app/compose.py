@@ -74,13 +74,13 @@ from cadenzra.verification.midi_analysis import (
     channel_track_invariant_ok,
     extract_voice_notes,
 )
-from cadenzra.verification.section import validate_section
+from cadenzra.verification.section import validate_section, validate_voice_in_context
 from cadenzra.verification.transposition import (
     TONAL_ANSWER_MAX_ALTERED_SHARE,
     UnknownRelationError,
     parse_relation,
 )
-from cadenzra.verification.voice import validate_voice
+from cadenzra.verification.voice import part_events, validate_voice
 
 _log = logging.getLogger(__name__)
 
@@ -276,6 +276,7 @@ def _write_section_voices(
     """
     if _is_contrapuntal(section.texture):
         parts: list[VoicePart] = []
+        sibling_events: dict[VoiceId, list[NoteEvent]] = {}
         try:
             for voice_id in _entry_order(section, voice_ids):
                 part = _voice_to_convergence(
@@ -284,9 +285,17 @@ def _write_section_voices(
                     section,
                     voice_id,
                     siblings=_siblings_of(state, section, voice_id),
+                    sibling_events=sibling_events,
                     motif_events=motif_events,
                 )
                 parts.append(part)
+                sibling_events[voice_id] = part_events(
+                    part,
+                    state.spec.voices_by_id[voice_id],
+                    section,
+                    services.renderer,
+                    services.workdir / f"{section.section_id}-{voice_id}-accepted",
+                )
                 state = state.model_copy(
                     update={
                         "voices": state.voices
@@ -559,6 +568,7 @@ def _voice_to_convergence(
     *,
     prior: list[FeedbackItem] | None = None,
     siblings: dict[VoiceId, str] | None = None,
+    sibling_events: dict[VoiceId, list[NoteEvent]] | None = None,
     motif_events: dict[MotifId, list[NoteEvent]] | None = None,
     patch_only: bool = False,
 ) -> VoicePart:
@@ -709,6 +719,33 @@ def _voice_to_convergence(
             section,
             materials,
         )
+        if not feedback and sibling_events is not None:
+            # Sequential counterpoint: the finished lines cannot move, so a
+            # candidate that clears its solo checks is judged against them
+            # and the harmony here, where the repair is one voice wide — a
+            # duplicated line that reached the section sweep instead arrived
+            # as 177 cross-voice violations, live, and plateaued at 89.
+            assert state.style is not None  # voices are generated after style
+            feedback = _entry_aware(
+                validate_voice_in_context(
+                    voice_id,
+                    part_events(
+                        part,
+                        voice_spec,
+                        section,
+                        services.renderer,
+                        services.workdir
+                        / f"{section.section_id}-{voice_id}-{cycle}-context",
+                    ),
+                    sibling_events,
+                    section,
+                    state.harmony.get(section.section_id),
+                    state.style,
+                    motif_events,
+                ),
+                section,
+                materials,
+            )
         for item in feedback:
             history.setdefault(item.fingerprint(), item)
         if not feedback:

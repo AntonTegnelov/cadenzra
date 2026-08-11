@@ -37,7 +37,7 @@ from cadenzra.notation.scaffold import (
 )
 from cadenzra.rendering.lilypond import first_error
 from cadenzra.verification.lyrics import lyric_misalignment
-from cadenzra.verification.midi_analysis import extract_voice_notes
+from cadenzra.verification.midi_analysis import NoteEvent, extract_voice_notes
 
 SOURCE: Final = "validate_voice"
 
@@ -121,6 +121,32 @@ def validate_voice(
     if result.midi_path is not None:
         feedback += _check_range(part, voice_spec, section, result.midi_path)
     return feedback
+
+
+def part_events(
+    part: VoicePart,
+    voice_spec: VoiceSpec,
+    section: SectionPlan,
+    renderer: ScoreRenderer,
+    workdir: Path,
+) -> list[NoteEvent]:
+    """The compiled notes of an already-validated part.
+
+    The input to the cross-voice checks run at the voice layer. Follows
+    `_check_range`'s convention for a renderer that produces no MIDI (the
+    scripted test fake): no notes, no MIDI-based judgment.
+    """
+    scaffolded = scaffold_fragment(
+        part.lily_music,
+        section.meter,
+        clef=_clef_for(voice_spec),
+        tempo_bpm=section.tempo_bpm,
+    )
+    result = renderer.compile(scaffolded.source, workdir)
+    if result.midi_path is None:
+        return []
+    by_track = extract_voice_notes(mido.MidiFile(result.midi_path))
+    return [note for notes in by_track.values() for note in notes]
 
 
 def _check_no_structural_commands(

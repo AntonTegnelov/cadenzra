@@ -96,6 +96,52 @@ def validate_section(
     ]
 
 
+def validate_voice_in_context(
+    voice_id: VoiceId,
+    events: list[NoteEvent],
+    sibling_events: dict[VoiceId, list[NoteEvent]],
+    section: SectionPlan,
+    skeleton: HarmonicSkeleton | None,
+    style: StylePack,
+    motif_notes: dict[MotifId, list[NoteEvent]] | None = None,
+) -> list[FeedbackItem]:
+    """The cross-voice checks for one candidate against already-fixed lines.
+
+    Sequential counterpoint accepts voices one at a time, so by the time a
+    candidate exists its siblings cannot move — every violation between them
+    is the candidate's to fix, at the layer where the repair is one voice
+    wide. A duplicated line that reaches the section sweep instead arrives
+    as a hundred-item cross-voice repair (a live first pass: 177 distinct
+    violations, plateaued at 89). Items the candidate cannot fix — both
+    sides inside prescribed entries — stay with the sweep's escalation
+    path, which owns plan contradictions.
+    """
+    spans = entry_spans(section, motif_notes or {})
+    feedback = []
+    for item in _check_parallels(
+        {voice_id: events, **sibling_events},
+        section,
+        style.parallel_fifths_policy,
+        spans,
+    ):
+        if voice_id not in item.voices or item.routing == "unfixable":
+            continue
+        feedback.append(
+            item.model_copy(
+                update={"voice_id": voice_id, "routing": "only-free-voice"}
+            )
+        )
+    if skeleton is not None:
+        feedback += [
+            item
+            for item in _check_harmonic_alignment(
+                {voice_id: events}, section, skeleton, style.dissonance_policy, spans
+            )
+            if voice_id in item.voices and item.routing != "unfixable"
+        ]
+    return feedback
+
+
 def entry_spans(
     section: SectionPlan, motif_notes: dict[MotifId, list[NoteEvent]]
 ) -> dict[VoiceId, list[tuple[Fraction, Fraction]]]:

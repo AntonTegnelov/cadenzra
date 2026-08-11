@@ -555,3 +555,41 @@ def test_entry_spans_cover_the_motif_from_its_entry_bar() -> None:
     ((start, end),) = spans["soprano"]
     assert start == Fraction(1)  # bar 2 of 4/4
     assert end == Fraction(2)  # four quarters long
+
+
+def test_a_candidate_is_judged_against_fixed_siblings_at_the_voice_layer() -> None:
+    """Sequential counterpoint accepts voices one at a time, so a candidate's
+    violations against the finished lines are its own to fix — routed to it,
+    at the layer where the repair is one voice wide. Live, a duplicated line
+    that reached the section sweep instead arrived as 177 violations."""
+    from cadenzra.verification.section import validate_voice_in_context
+
+    voices = _voices(soprano=[72, 74], bass=[60, 62])  # parallel octaves
+
+    feedback = validate_voice_in_context(
+        "soprano", voices["soprano"], {"bass": voices["bass"]},
+        _section(), None, _style(),
+    )
+
+    (item,) = feedback
+    assert item.kind == "parallels"
+    assert item.voice_id == "soprano", "the finished bass cannot move"
+    assert item.routing == "only-free-voice"
+
+
+def test_a_candidate_with_no_siblings_is_still_judged_against_the_harmony() -> None:
+    """The first entry of a sequential section has nothing to collide with,
+    but its held tones against the skeleton are already decidable — and a
+    held clash caught here costs one voice attempt, not a section sweep."""
+    from cadenzra.verification.section import validate_voice_in_context
+
+    voices = _voices(soprano=[71, 71, 71, 71])  # B held across C major
+
+    feedback = validate_voice_in_context(
+        "soprano", voices["soprano"], {},
+        _section(), _skeleton("C", "C", "C", "C"), _style(),
+    )
+
+    assert feedback, "a sustained non-chord tone must be flagged"
+    assert all(item.kind == "held_tone" for item in feedback)
+    assert all(item.voice_id == "soprano" for item in feedback)
