@@ -1387,8 +1387,10 @@ def _regrid(
 
 # Below this many distinct faults, a sweep costs a handful of patches and
 # Binomial noise dominates any trend — simulated at the measured regime, the
-# trend-based guard was still killing 13% of converging loops at the tail.
-_SWEEP_NOISE_FLOOR = 3
+# trend-based guard was killing converging loops at the tail (13% at floor
+# 3; live runs then stalled at 6-8 with budget left). The stuck regime's
+# counts sit far above this, so the guard still ends those.
+_SWEEP_NOISE_FLOOR = 8
 
 
 def sweep_plateaued(trajectory: list[int]) -> bool:

@@ -46,12 +46,17 @@ def build_patch_prompt(ctx: PatchContext) -> str:
         "Fix these problems:\n"
         + "\n".join(f"  - {item.message}" for item in ctx.feedback)
     )
+    example = " ".join(
+        str(term.denominator)
+        for term in ctx.section.meter.terms
+        for _ in range(term.numerator)
+    )
     blocks.append(
         "For each replacement bar, first declare every duration it contains, "
         f"in order, summing to exactly one bar of "
-        f"{ctx.section.meter.surface_string()} — then write the notes to "
-        "match that count. A rhythm copied from the rejected bar will not "
-        "add up; recount from nothing."
+        f"{ctx.section.meter.surface_string()} — for example '{example}' "
+        "sums exactly — then write the notes to match that count. A rhythm "
+        "copied from the rejected bar will not add up; recount from nothing."
     )
     if ctx.siblings:
         lines = "\n".join(

@@ -239,6 +239,10 @@ def test_the_patch_prompt_carries_the_feedback_and_the_siblings() -> None:
     assert "e'4 f'4 g'4 a'4" in prompt, "the line it must fit against is shown"
     assert "only" in prompt.lower() and "bar 2" in prompt
     assert "1: c'4 d'4 e'4 f'4 |" in prompt, "bars are numbered so 'bar 2' is findable"
+    # A worked declaration that sums exactly, generated from the meter — a
+    # live 5/4 repair went malformed on the durations channel three patches
+    # running with only the instruction to guide it.
+    assert "'4 4 4 4'" in prompt
 
 
 def test_the_patch_prompt_never_offers_a_prescribed_bar() -> None:

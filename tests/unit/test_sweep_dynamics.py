@@ -88,3 +88,6 @@ def test_the_tail_is_bounded_by_the_budget_not_the_guard() -> None:
     was measured by the simulation above. The budget is the honest bound."""
     assert not sweep_plateaued([1, 1, 1, 1])
     assert not sweep_plateaued([47, 24, 3, 3, 3, 3])
+    assert not sweep_plateaued([54, 30, 20, 13, 9, 6, 7, 8, 8]), (
+        "the live tail that stalled at 6-8 with three sweeps of budget left"
+    )
