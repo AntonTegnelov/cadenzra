@@ -176,14 +176,17 @@ def test_a_chord_slot_reports_its_whole_requirement_set_with_an_example() -> Non
     assert len(feedback) == 1, "one failing slot is one item, not one per note"
     message = feedback[0].message
     assert "E4" in message and "Eb4" in message, "the whole requirement set"
-    assert "one chord that does" in message
+    assert "chords that do" in message
     from cadenzra.notation.chords import parse_chord_symbol
     from cadenzra.verification.section import permitted_pitch_classes
 
-    suggestion = message.rsplit("one chord that does: ", 1)[1]
-    assert {3, 4} <= permitted_pitch_classes(
-        parse_chord_symbol(suggestion), strict=True
-    ), "the suggested chord holds both notes as real chord tones"
+    listed = message.rsplit("chords that do: ", 1)[1].split(" — ")[0]
+    suggestions = [symbol.strip() for symbol in listed.split(",")]
+    assert len(suggestions) > 1, "several options, so the key's idiom can win"
+    for suggestion in suggestions:
+        assert {3, 4} <= permitted_pitch_classes(
+            parse_chord_symbol(suggestion), strict=True
+        ), "every suggested chord holds both notes as real chord tones"
 
 
 def test_pinned_tones_hand_the_grid_its_constraints_up_front() -> None:

@@ -219,15 +219,17 @@ def check_entries_against_grid(
         ]
         if not missing:
             continue
-        example = _chord_containing({pitch.pc12 for _, pitch in requirements}, flats)
+        examples = _chords_containing(
+            {pitch.pc12 for _, pitch in requirements}, flats
+        )
         message = (
             f"the entries hold {_tone_names(missing)} through "
             f"{format_bar_beat(event.offset, section.meter)}, where the grid "
             f"declares {event.chord}; the chord there must contain "
             f"{_tone_names(requirements)} — the subjects cannot change"
         )
-        if example is not None:
-            message += f"; one chord that does: {example}"
+        if examples:
+            message += f"; chords that do: {', '.join(examples)} — pick what fits the key"
         feedback.append(
             _item(
                 section, location=event.offset, kind="entry_vs_grid", message=message
@@ -263,15 +265,19 @@ _ROOTS_SHARP: Final = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#
 _ROOTS_FLAT: Final = ("C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B")
 
 
-def _chord_containing(pcs: set[int], flats: bool) -> str | None:
-    """A chord symbol holding every pc in `pcs` as a real chord tone, or None.
+def _chords_containing(pcs: set[int], flats: bool) -> list[str]:
+    """A few chord symbols holding every pc in `pcs` as real chord tones.
 
-    Arithmetic over the checker's own vocabulary — the suggestion passes this
-    same check by construction, handed over instead of left as a puzzle. The
-    search is strict on purpose: liberal mode would let a plain triad "cover"
-    a semitone pair through passing-tone allowances, and suggesting a chord
-    that merely tolerates the subjects is not an answer.
+    Arithmetic over the checker's own vocabulary — every suggestion passes
+    this same check by construction, handed over instead of left as a
+    puzzle. The search is strict on purpose: liberal mode would let a plain
+    triad "cover" a semitone pair through passing-tone allowances, and a
+    chord that merely tolerates the subjects is not an answer. Several are
+    named because the search cannot know the key's idiom — one live grid
+    refused an Ab at a cadence six times when the equally valid Cm was the
+    tonic it wanted all along.
     """
+    found: list[str] = []
     for quality in _EXAMPLE_QUALITIES:
         for root in _ROOTS_FLAT if flats else _ROOTS_SHARP:
             try:
@@ -279,8 +285,11 @@ def _chord_containing(pcs: set[int], flats: bool) -> str | None:
             except ChordSymbolError:
                 continue
             if pcs <= permitted_pitch_classes(chord, strict=True):
-                return f"{root}{quality}"
-    return None
+                found.append(f"{root}{quality}")
+                if len(found) == 4:
+                    return found
+                break  # one root per quality keeps the list varied
+    return found
 
 
 def pinned_entry_tones(
