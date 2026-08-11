@@ -139,6 +139,24 @@ def test_a_declaration_that_does_not_sum_to_the_bar_is_rejected_with_both_number
     )
 
 
+def test_an_overfull_declaration_names_the_token_edit_that_fixes_it() -> None:
+    """Live: an 11/8 bar in 5/4 needs exactly 1/8 removed, and the only
+    single-note fix is un-dotting the 4. — but every note the model juggled
+    was a multiple of 2/8, so five patches swapped quarters for halves and
+    never converged. The declared tokens are in hand, so the rejection names
+    the edits that actually land: which written token, rewritten as what."""
+    from cadenzra.model.primitives.meter import simple_meter
+
+    payload = _payload("2", "e''4. g''4 b''4 a''2 |", "4. 4 4 2")
+
+    with pytest.raises(LLMOutputError) as caught:
+        parse_bar_patch(payload, [2], meter=simple_meter(5, 4, [3, 2]))
+    message = str(caught.value)
+    assert "11/8" in message
+    assert "write a 4. as a 4" in message, "un-dotting is the edit that lands"
+    assert "a 4 as an 8" in message
+
+
 def test_dotted_and_tuplet_durations_declare_their_real_length() -> None:
     payload = _payload(
         "1", "g'8. g'16 \\tuplet 3/2 { g'4 g' g' } g'4 |", "8. 16 1/6 1/6 1/6 4"
