@@ -119,6 +119,30 @@ def entry_spans(
     return spans
 
 
+def _step_resolution(
+    pitch: Pitch, permitted: frozenset[int] | set[int], section: SectionPlan
+) -> str:
+    """The steps that land on the chord, named — arithmetic, not a puzzle.
+
+    "Resolve it by step" left the model sampling blindly inside a space
+    already squeezed by the entries, the chart and the parallels rule; one
+    live fault survived three sweeps that way. Nearest permitted neighbours
+    first; none within a step means shortening is the honest advice.
+    """
+    flats = prefer_flats(section.key)
+    steps = [
+        Pitch.from_midi_number(pitch.midi_number + delta, prefer_flats=flats)
+        for delta in (-1, 1, -2, 2)
+        if (pitch.midi_number + delta) % 12 in permitted
+    ]
+    if not steps:
+        return " — no chord tone lies within a step; shorten the note instead"
+    named = " or ".join(
+        f"{step.to_scientific()} ({step.to_lilypond()})" for step in steps[:2]
+    )
+    return f" — a step to {named} lands on the chord"
+
+
 def _prescribed(
     spans: dict[VoiceId, list[tuple[Fraction, Fraction]]],
     voice_id: VoiceId,
@@ -383,6 +407,7 @@ def _check_harmonic_alignment(
                             f"{format_bar_beat(event.offset, section.meter)}, where the "
                             f"harmony is {event.chord}; resolve it by step or make it a "
                             "chord tone"
+                            + _step_resolution(pitch, permitted, section)
                         ),
                     )
                 )

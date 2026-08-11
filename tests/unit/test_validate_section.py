@@ -204,6 +204,10 @@ def test_a_sustained_clash_against_the_chord_is_flagged() -> None:
     assert "harmony is C" in feedback[0].message
     assert feedback[0].voice_id == "soprano"
     assert feedback[0].kind == "held_tone"
+    # The resolution is arithmetic the checker can do exactly: name the
+    # steps that land on the chord instead of leaving "resolve by step" as
+    # a puzzle — a live fault survived three sweeps of blind sampling.
+    assert "D5" in feedback[0].message or "E5" in feedback[0].message
 
 
 def test_a_passing_eighth_is_not_a_held_tone() -> None:
