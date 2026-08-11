@@ -752,6 +752,33 @@ def test_an_open_prescription_is_decorated_as_a_beginning_not_a_whole(
     assert "complete" in decorated.message
 
 
+def test_a_sweep_repair_never_falls_back_to_a_full_rewrite(tmp_path: Path) -> None:
+    """During a cross-voice sweep every part has already passed its own
+    checks, and a full rewrite is where fresh faults pour in — one rewritten
+    viola injected twelve, live. When patching strikes out, the repair
+    returns the part as it stands; the sweep re-flags what remains and the
+    alternating router hands it to the partner voice next time."""
+    generator = ScriptedGenerator(patches=[{1: BAD}, {1: BAD}])
+    renderer = RecordingRenderer(
+        [failing_bar_check(line=9), failing_bar_check(line=9)]
+    )
+    services = _loop_services(generator, renderer, tmp_path)
+    section = _loop_section()
+
+    part = _voice_to_convergence(
+        _loop_state(section),
+        services,
+        section,
+        "alto",
+        prior=[_bar_scoped_item()],
+        patch_only=True,
+    )
+
+    assert generator.calls == 0, "no full rewrite, ever, on the sweep path"
+    assert len(generator.patch_contexts) == 2
+    assert part.lily_music.strip() == BAD, "the part comes back as it stands"
+
+
 def test_a_compile_failure_is_never_patched(tmp_path: Path) -> None:
     """A part that does not compile has no trustworthy bar numbers to patch."""
     item = FeedbackItem(

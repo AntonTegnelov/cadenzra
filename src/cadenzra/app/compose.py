@@ -559,6 +559,7 @@ def _voice_to_convergence(
     prior: list[FeedbackItem] | None = None,
     siblings: dict[VoiceId, str] | None = None,
     motif_events: dict[MotifId, list[NoteEvent]] | None = None,
+    patch_only: bool = False,
 ) -> VoicePart:
     """One fragment, regenerated against its feedback until it validates.
 
@@ -599,6 +600,15 @@ def _voice_to_convergence(
         shown = {item.fingerprint() for item in feedback}
         editable = _editable_bars(feedback, rejected, section, protected)
         patching = bool(editable) and patch_attempts < _PATCH_ATTEMPTS
+        if not patching and patch_only:
+            # A sweep repair never falls back to a full rewrite: the part
+            # already passed its own checks, and a rewrite is where fresh
+            # cross-voice faults pour in — one rewritten viola injected
+            # twelve, live. The part goes back as it stands; the sweep
+            # re-flags what remains and the alternating router hands it to
+            # the partner voice next time.
+            assert rejected is not None  # patch_only repairs start from a part
+            return rejected
         if not patching:
             attempt += 1
         try:
@@ -1429,6 +1439,7 @@ def _rewrite_voices(
                 prior=_prioritized(items),
                 siblings=_siblings_of(state, sections[section_id], voice_id),
                 motif_events=motif_events,
+                patch_only=True,
             )
         except BudgetExhaustedError as error:
             # One voice's bad run of attempts is the sweep's problem, not

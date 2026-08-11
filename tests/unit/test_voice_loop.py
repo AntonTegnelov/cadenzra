@@ -6,6 +6,7 @@ exhaustion fails loudly with its evidence, and that superseded feedback is
 cleared when its target regenerates (docs/09).
 """
 
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
@@ -357,21 +358,29 @@ def test_a_voice_that_cannot_converge_yields_back_to_the_sweep(
         structure=StructurePlan(sections=[section]),
         voices={
             voice_key("A", "soprano"): VoicePart(
-                section_id="A", voice_id="soprano", lily_music="OLD-soprano"
+                section_id="A", voice_id="soprano", lily_music=BAD
             ),
             voice_key("A", "alto"): VoicePart(
-                section_id="A", voice_id="alto", lily_music="OLD-alto"
+                section_id="A", voice_id="alto", lily_music=BAD
             ),
         },
     )
-    # The soprano always returns two bars for a one-bar section — a rejection
-    # no retry fixes; the alto repairs cleanly on its first try.
-    generator = ScriptedGenerator(
-        by_voice={("A", "soprano"): f"{GOOD} {GOOD}", ("A", "alto"): GOOD}
-    )
+    # Every soprano patch comes back malformed — a rejection no retry fixes
+    # within its budget; the alto repairs cleanly on its first patch.
+    from cadenzra.common.errors import LLMOutputError
+
+    class _SopranoMalformed(ScriptedGenerator):
+        def patch_voice(self, ctx: object) -> dict[int, str]:
+            if ctx.voice.voice_id == "soprano":  # type: ignore[attr-defined]
+                raise LLMOutputError(
+                    "the replacement for bar 1 declares durations summing to 9/8"
+                )
+            return super().patch_voice(ctx)  # type: ignore[arg-type]
+
+    generator = _SopranoMalformed(patches=[{1: GOOD}])
     services = ComposeServices(
         generator=generator,
-        renderer=RecordingRenderer(),
+        renderer=RecordingRenderer([clean()]),
         workdir=tmp_path,
         budgets=RetryBudgets(voice=2),
         synthesizer=None,  # type: ignore[arg-type]
@@ -382,7 +391,9 @@ def test_a_voice_that_cannot_converge_yields_back_to_the_sweep(
         level="section",
         section_id="A",
         voice_id="soprano",
-        message="parallel octaves with the alto",
+        location=Fraction(0),
+        kind="parallels",
+        message="parallel octaves with the alto into bar 1, beat 1",
     )
     targets = {
         ("A", "soprano"): [note],
@@ -391,19 +402,19 @@ def test_a_voice_that_cannot_converge_yields_back_to_the_sweep(
 
     repaired = _rewrite_voices(state, services, list(targets.values())[0], targets)
 
-    assert repaired.voices[voice_key("A", "soprano")].lily_music == "OLD-soprano", (
+    assert repaired.voices[voice_key("A", "soprano")].lily_music == BAD, (
         "the exhausted repair keeps the old part for the next sweep"
     )
-    assert repaired.voices[voice_key("A", "alto")].lily_music == GOOD, (
+    assert repaired.voices[voice_key("A", "alto")].lily_music.strip() == GOOD, (
         "the sweep carried on past the exhausted voice"
     )
 
 
 def test_repaired_voices_see_each_other_not_a_stale_snapshot() -> None:
-    """Rewriting every named voice against the same snapshot means each avoids
-    the others' *old* music, and the new pair can be exactly as parallel.
-    Measured on a double fugue, a repair loop went 239 violations, then 48,
-    then 48 again, and gave up."""
+    """Repairing every named voice against the same snapshot means each
+    avoids the others' *old* music, and the new pair can be exactly as
+    parallel. Measured on a double fugue, a repair loop went 239 violations,
+    then 48, then 48 again, and gave up."""
     from pathlib import Path
 
     from cadenzra.app.compose import ComposeServices, _rewrite_voices
@@ -412,24 +423,16 @@ def test_repaired_voices_see_each_other_not_a_stale_snapshot() -> None:
     from cadenzra.model.style import StylePack
     from cadenzra.model.voice import VoicePart
 
+    NEW_SOPRANO = "b'8 b' c'' c'' d''4. |"
     seen: list[dict[str, str]] = []
 
-    class _Recorder:
-        """Writes a new line, and records what siblings it was shown."""
+    class _Recorder(ScriptedGenerator):
+        """Patches a new line, and records what siblings it was shown."""
 
-        def generate_voice(self, ctx: object) -> VoicePart:
+        def patch_voice(self, ctx: object) -> dict[int, str]:
             seen.append(dict(ctx.siblings))  # type: ignore[attr-defined]
             voice_id = ctx.voice.voice_id  # type: ignore[attr-defined]
-            # Valid music, so the per-voice validator passes and the test is
-            # about what the repair *saw*, not about notation.
-            return VoicePart(
-                section_id=ctx.section.section_id,  # type: ignore[attr-defined]
-                voice_id=voice_id,
-                lily_music=f"NEW {GOOD}" if voice_id == "soprano" else GOOD,
-            )
-
-        def __getattr__(self, name: str) -> object:
-            raise AssertionError(f"unexpected call to {name}")
+            return {1: NEW_SOPRANO if voice_id == "soprano" else GOOD}
 
     soprano = ALTO.model_copy(update={"voice_id": "soprano"})
     section = SECTION.model_copy(update={"active_voices": ["soprano", "alto"]})
@@ -445,15 +448,15 @@ def test_repaired_voices_see_each_other_not_a_stale_snapshot() -> None:
         structure=StructurePlan(sections=[section]),
         voices={
             voice_key("A", "soprano"): VoicePart(
-                section_id="A", voice_id="soprano", lily_music="OLD-soprano"
+                section_id="A", voice_id="soprano", lily_music=BAD
             ),
             voice_key("A", "alto"): VoicePart(
-                section_id="A", voice_id="alto", lily_music="OLD-alto"
+                section_id="A", voice_id="alto", lily_music=BAD
             ),
         },
     )
     services = ComposeServices(
-        generator=_Recorder(),  # type: ignore[arg-type]
+        generator=_Recorder(),
         renderer=RecordingRenderer([clean()]),
         workdir=Path("/tmp/unused"),
         budgets=RetryBudgets(),
@@ -461,8 +464,13 @@ def test_repaired_voices_see_each_other_not_a_stale_snapshot() -> None:
         output_dir=Path("/tmp/unused"),
     )
     note_s = FeedbackItem(
-        source="validate_section", level="section", section_id="A",
-        voice_id="soprano", message="parallel octaves with alto",
+        source="validate_section",
+        level="section",
+        section_id="A",
+        voice_id="soprano",
+        location=Fraction(0),
+        kind="parallels",
+        message="parallel octaves with alto into bar 1, beat 1",
     )
     note_a = note_s.model_copy(update={"voice_id": "alto"})
 
@@ -476,5 +484,5 @@ def test_repaired_voices_see_each_other_not_a_stale_snapshot() -> None:
     assert len(seen) == 2
     # The first repair sees the other voice as it stands; the second sees the
     # first one's *new* line, which is the whole point.
-    assert seen[0] == {"alto": "OLD-alto"}
-    assert seen[1] == {"soprano": f"NEW {GOOD}"}
+    assert seen[0] == {"alto": BAD}
+    assert seen[1] == {"soprano": f"{NEW_SOPRANO}\n"}
