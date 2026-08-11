@@ -240,14 +240,11 @@ def test_a_regrid_that_cannot_satisfy_the_entry_still_goes_loud(
 
 
 def test_a_stalled_repair_loop_stops_at_the_plateau(tmp_path: Path) -> None:
-    """263 → 63 → 66: the double-fugue's third sweep spent thirteen minutes
-    proving what the second already had. Sweeps are stochastic, so one
-    regression is not a verdict — live loops went 65 → 53 → 60, then
-    47 → 24 → 14 → 7 → 13 → 7, killed while descending through noise of
-    about five faults a sweep. Three consecutive sweeps without a new best
-    is the plateau; here every sweep repeats the same fault, so the loop
-    goes loud after exactly three non-improving sweeps, trajectory in
-    hand."""
+    """A single immortal fault sits below the guard's noise floor — at the
+    last few faults sweeps are cheap and Binomial noise dominates any
+    trend (the simulation measured the trend guard killing 13% of
+    converging loops there), so the section budget is the honest bound:
+    the loop spends it and goes loud with the trajectory in hand."""
     from tests.fakes.generator import ScriptedGenerator
 
     free_section = SECTION.model_copy(update={"material": []})
@@ -285,14 +282,7 @@ def test_a_stalled_repair_loop_stops_at_the_plateau(tmp_path: Path) -> None:
     # own line back.
     generator = ScriptedGenerator(
         by_voice={("A", "soprano"): UPPER_MUSIC, ("A", "alto"): LOWER_MUSIC},
-        patches=[
-            {1: LOWER_MUSIC},
-            {1: UPPER_MUSIC},
-            {1: LOWER_MUSIC},
-            {1: UPPER_MUSIC},
-            {1: LOWER_MUSIC},
-            {1: UPPER_MUSIC},
-        ],
+        patches=[{1: LOWER_MUSIC}, {1: UPPER_MUSIC}] * 12,
     )
     services = ComposeServices(
         generator=generator,
@@ -303,9 +293,9 @@ def test_a_stalled_repair_loop_stops_at_the_plateau(tmp_path: Path) -> None:
         output_dir=tmp_path,
     )
 
-    with pytest.raises(BudgetExhaustedError, match="stopped converging") as caught:
+    with pytest.raises(BudgetExhaustedError, match="still fails") as caught:
         assemble_and_verify(state, services)
 
-    assert "1 -> 1 -> 1 -> 1" in str(caught.value), "the trajectory is in the message"
+    assert caught.value.attempts == RetryBudgets().section
     repairs = generator.calls + len(generator.patch_contexts)
-    assert repairs <= 6, "three repair sweeps, then the plateau went loud"
+    assert repairs <= 2 * RetryBudgets().section, "cheap tail sweeps, bounded"

@@ -1235,15 +1235,9 @@ def assemble_and_verify(
             }
             continue
 
-        # Sweeps are stochastic, so regressions are not verdicts — live
-        # loops went 65 → 53 → 60 and 47 → 24 → 14 → 7 → 13 → 7, killed
-        # while descending through noise of about five faults a sweep. A
-        # loop with no new best in three consecutive sweeps is proving the
-        # same thing over and over (measured: 263 → 63 → 66), and goes
-        # loud; the section budget bounds the patient case.
         distinct = len({item.fingerprint() for item in feedback})
         trajectory.append(distinct)
-        if len(trajectory) >= 4 and min(trajectory[-3:]) >= min(trajectory[:-3]):
+        if sweep_plateaued(trajectory):
             path = " -> ".join(str(count) for count in trajectory)
             raise BudgetExhaustedError(
                 f"the cross-voice checks stopped converging: distinct "
@@ -1375,6 +1369,30 @@ def _regrid(
             )
         state = regenerate_section_harmony(state, services, section_id, prior)
     return state
+
+
+# Below this many distinct faults, a sweep costs a handful of patches and
+# Binomial noise dominates any trend — simulated at the measured regime, the
+# trend-based guard was still killing 13% of converging loops at the tail.
+_SWEEP_NOISE_FLOOR = 3
+
+
+def sweep_plateaued(trajectory: list[int]) -> bool:
+    """Whether the repair sweep has stopped converging.
+
+    Sweeps are stochastic, so regressions are not verdicts — live loops went
+    65 → 53 → 60 and 47 → 24 → 14 → 7 → 13 → 7, killed while descending
+    through noise of about five faults a sweep. A loop with no new best in
+    three consecutive sweeps is proving the same thing over and over
+    (measured: 263 → 63 → 66) and goes loud — unless it is already down to
+    the last few faults, where sweeps are cheap and the section budget is
+    the honest bound. Pure, so the calibration is pinned by simulation
+    (`test_sweep_dynamics`) instead of tuned against billed runs.
+    """
+    if len(trajectory) < 4:
+        return False
+    best = min(trajectory[:-3])
+    return min(trajectory[-3:]) >= best and best > _SWEEP_NOISE_FLOOR
 
 
 def _swap_both_free(feedback: list[FeedbackItem]) -> list[FeedbackItem]:
