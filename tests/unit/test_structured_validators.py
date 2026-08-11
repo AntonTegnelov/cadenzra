@@ -244,44 +244,97 @@ def test_a_bare_string_fragment_is_rejected_with_the_shape_named() -> None:
         parse_style_pack(payload, _spec())
 
 
+def _cell_spec() -> PieceSpec:
+    """One allowed meter, covered by `_COVERING_CELL` — packs under test that
+    care about other constraints must not drown in coverage findings."""
+    return _spec(meters_allowed=[SEVEN_EIGHT])
+
+
+def test_a_meter_with_no_rhythmic_cells_is_rejected() -> None:
+    """The prompt asks for two cells per allowed meter and nothing counted
+    them: a pack with zero cells for a section's meter silently degraded
+    every voice prompt in it — cells are the odd-meter mechanism (docs/04),
+    and their absence was the quiet kind of failure."""
+    from cadenzra.model.style import RhythmicCell, StylePack
+    from cadenzra.verification.style import validate_style_pack
+    from tests.fakes.renderer import RecordingRenderer
+
+    partial = StylePack(
+        rhythmic_cells=[
+            RhythmicCell(meter=SEVEN_EIGHT, lily="c8 c c c c4.", description="d")
+        ]
+    )
+    covered = StylePack(
+        rhythmic_cells=[
+            RhythmicCell(meter=SEVEN_EIGHT, lily="c8 c c c c4.", description="d"),
+            RhythmicCell(meter=FIVE_FOUR, lily="c4 c c c c", description="e"),
+        ]
+    )
+
+    feedback = validate_style_pack(
+        partial, _spec(), RecordingRenderer(), Path("/tmp/unused")
+    )
+
+    assert any(
+        "5/4" in item.message and "cells" in item.message for item in feedback
+    )
+    assert (
+        validate_style_pack(covered, _spec(), RecordingRenderer(), Path("/tmp/unused"))
+        == []
+    )
+
+
 def test_a_pack_demanding_octave_doubling_while_forbidding_parallels_is_incoherent() -> None:
     """The orchestra trap (F3): "doubling of melody in octaves" beside
     parallel_fifths_policy='forbid' produced 72 parallel-octave complaints
     whose minimum edit violated the range floor. A declared relationship
     between two fields of one artifact is arithmetic, not taste."""
-    from cadenzra.model.style import StylePack
+    from cadenzra.model.style import RhythmicCell, StylePack
     from cadenzra.verification.style import validate_style_pack
     from tests.fakes.renderer import RecordingRenderer
 
     incoherent = StylePack(
         idioms=["doubling of melody in octaves"],
         parallel_fifths_policy="forbid",
+        rhythmic_cells=[
+            RhythmicCell(meter=SEVEN_EIGHT, lily="c8 c c c c4.", description="d")
+        ],
     )
     coherent = incoherent.model_copy(update={"parallel_fifths_policy": "allow"})
 
-    feedback = validate_style_pack(incoherent, RecordingRenderer(), Path("/tmp/unused"))
+    feedback = validate_style_pack(
+        incoherent, _cell_spec(), RecordingRenderer(), Path("/tmp/unused")
+    )
 
     assert len(feedback) == 1
     assert "doubling of melody in octaves" in feedback[0].message
     assert "allow" in feedback[0].message
-    assert validate_style_pack(coherent, RecordingRenderer(), Path("/tmp/unused")) == []
+    assert (
+        validate_style_pack(coherent, _cell_spec(), RecordingRenderer(), Path("/tmp/unused"))
+        == []
+    )
 
 
 def test_a_fragment_carrying_structural_commands_is_rejected_by_the_pack_check() -> None:
     """Fragments are exemplars: a \\clef inside one teaches every voice call
     to write a forbidden command. The same denylist scan the voice validator
     runs, applied when the pack is born."""
-    from cadenzra.model.style import StyleFragment, StylePack
+    from cadenzra.model.style import RhythmicCell, StyleFragment, StylePack
     from cadenzra.verification.style import validate_style_pack
     from tests.fakes.renderer import RecordingRenderer
 
     pack = StylePack(
+        rhythmic_cells=[
+            RhythmicCell(meter=SEVEN_EIGHT, lily="c8 c c c c4.", description="d")
+        ],
         few_shot_fragments=[
             StyleFragment(meter=SEVEN_EIGHT, lily="\\clef bass c4 d4 e4 f4 |")
-        ]
+        ],
     )
 
-    feedback = validate_style_pack(pack, RecordingRenderer(), Path("/tmp/unused"))
+    feedback = validate_style_pack(
+        pack, _cell_spec(), RecordingRenderer(), Path("/tmp/unused")
+    )
 
     assert len(feedback) == 1
     assert "\\clef" in feedback[0].message

@@ -27,7 +27,7 @@ from cadenzra.model.primitives.pitch import Pitch
 from cadenzra.model.spec import PieceSpec, VoiceSpec
 from cadenzra.model.state import PipelineState
 from cadenzra.model.structure import DynamicsPlan, DynTarget, SectionPlan, StructurePlan
-from cadenzra.model.style import StylePack
+from cadenzra.model.style import RhythmicCell, StylePack
 from cadenzra.performance.curves import EXPRESSION_CONTROLLER
 from cadenzra.rendering.fluidsynth import FluidsynthAdapter
 from cadenzra.rendering.lilypond import LilypondAdapter
@@ -133,7 +133,15 @@ def composed(tmp_path_factory: pytest.TempPathFactory) -> tuple[PipelineState, P
     out = tmp_path_factory.mktemp("compose")
     generator = ScriptedGenerator(
         by_voice=FRAGMENTS,
-        style=StylePack(parallel_fifths_policy="allow"),
+        style=StylePack(
+            parallel_fifths_policy="allow",
+            rhythmic_cells=[
+                RhythmicCell(meter=FIVE_FOUR, lily="c4 c c c c", description="d"),
+                RhythmicCell(
+                    meter=SEVEN_EIGHT, lily="c8 c c c c4.", description="d"
+                ),
+            ],
+        ),
         plans=[PLAN],
         skeletons=list(_skeletons().values()),
     )
@@ -340,7 +348,15 @@ def test_a_flat_sounding_piece_is_fixed_by_a_knob_not_a_rewrite(
     )
     generator = ScriptedGenerator(
         by_voice=FRAGMENTS,
-        style=StylePack(parallel_fifths_policy="allow"),
+        style=StylePack(
+            parallel_fifths_policy="allow",
+            rhythmic_cells=[
+                RhythmicCell(meter=FIVE_FOUR, lily="c4 c c c c", description="d"),
+                RhythmicCell(
+                    meter=SEVEN_EIGHT, lily="c8 c c c c4.", description="d"
+                ),
+            ],
+        ),
         plans=[PLAN],
         skeletons=list(_skeletons().values()),
     )
@@ -384,7 +400,15 @@ def test_a_complaint_only_a_human_can_settle_is_recorded_not_acted_on(
     )
     generator = ScriptedGenerator(
         by_voice=FRAGMENTS,
-        style=StylePack(parallel_fifths_policy="allow"),
+        style=StylePack(
+            parallel_fifths_policy="allow",
+            rhythmic_cells=[
+                RhythmicCell(meter=FIVE_FOUR, lily="c4 c c c c", description="d"),
+                RhythmicCell(
+                    meter=SEVEN_EIGHT, lily="c8 c c c c4.", description="d"
+                ),
+            ],
+        ),
         plans=[PLAN],
         skeletons=list(_skeletons().values()),
     )

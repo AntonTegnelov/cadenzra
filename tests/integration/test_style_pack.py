@@ -47,8 +47,25 @@ GOOD_PACK = StylePack(
 )
 
 
+def _spec() -> PieceSpec:
+    alto = VoiceSpec(
+        voice_id="alto",
+        kind="vocal",
+        range_low=Pitch(step="G", octave=3),
+        range_high=Pitch(step="C", octave=5),
+        midi_program=52,
+    )
+    return PieceSpec(
+        title="T",
+        style_prompt="s",
+        voices=[alto],
+        meters_allowed=[SEVEN_EIGHT],
+        target_minutes=1.0,
+    )
+
+
 def test_a_bad_pack_is_rejected_with_both_faults_named(tmp_path: Path) -> None:
-    feedback = validate_style_pack(BAD_PACK, LilypondAdapter(), tmp_path)
+    feedback = validate_style_pack(BAD_PACK, _spec(), LilypondAdapter(), tmp_path)
 
     messages = " || ".join(item.message for item in feedback)
     assert "\\clef" in messages
@@ -57,7 +74,7 @@ def test_a_bad_pack_is_rejected_with_both_faults_named(tmp_path: Path) -> None:
 
 
 def test_a_good_pack_passes(tmp_path: Path) -> None:
-    assert validate_style_pack(GOOD_PACK, LilypondAdapter(), tmp_path) == []
+    assert validate_style_pack(GOOD_PACK, _spec(), LilypondAdapter(), tmp_path) == []
 
 
 def test_the_style_loop_feeds_rejection_back_and_converges(tmp_path: Path) -> None:

@@ -78,7 +78,7 @@ def audit_state(
 
     if state.style is not None:
         findings += found(
-            "style", validate_style_pack(state.style, renderer, scratch / "style")
+            "style", validate_style_pack(state.style, state.spec, renderer, scratch / "style")
         )
     if state.structure is not None:
         findings += found(

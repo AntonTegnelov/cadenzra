@@ -29,7 +29,7 @@ from cadenzra.model.primitives.pitch import Pitch
 from cadenzra.model.spec import LyricsSpec, PieceSpec, VoiceSpec
 from cadenzra.model.state import PipelineState
 from cadenzra.model.structure import DynamicsPlan, SectionPlan, StructurePlan
-from cadenzra.model.style import StylePack
+from cadenzra.model.style import RhythmicCell, StylePack
 from cadenzra.rendering.fluidsynth import FluidsynthAdapter
 from cadenzra.rendering.lilypond import LilypondAdapter
 from cadenzra.verification.midi_analysis import channel_track_invariant_ok
@@ -139,7 +139,12 @@ def sung(tmp_path_factory: pytest.TempPathFactory) -> tuple[PipelineState, Path]
     runlog = RunLog(out / "runs" / "test")
     generator = ScriptedGenerator(
         by_voice=FRAGMENTS,
-        style=StylePack(parallel_fifths_policy="allow"),
+        style=StylePack(
+            parallel_fifths_policy="allow",
+            rhythmic_cells=[
+                RhythmicCell(meter=FOUR_FOUR, lily="c4 c c c", description="d")
+            ],
+        ),
         plans=[PLAN],
         skeletons=_skeletons(),
         lyric_plans=[LYRIC_PLAN],

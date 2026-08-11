@@ -731,7 +731,14 @@ def test_a_bad_style_pack_does_not_end_the_run() -> None:
             calls["n"] += 1
             if calls["n"] == 1:
                 raise LLMOutputError("'3/3' is not one of this piece's meters (4/4)")
-            return StylePack(idioms=["second time lucky"])
+            return StylePack(
+                idioms=["second time lucky"],
+                rhythmic_cells=[
+                    RhythmicCell(
+                        meter=SEVEN_EIGHT, lily="c8 c c c c4.", description="d"
+                    )
+                ],
+            )
 
         def __getattr__(self, name: str) -> object:
             raise AssertionError(f"derive_style should not call {name}")
@@ -743,9 +750,11 @@ def test_a_bad_style_pack_does_not_end_the_run() -> None:
         meters_allowed=[SEVEN_EIGHT],
         target_minutes=1.0,
     )
+    from tests.fakes.renderer import RecordingRenderer, clean
+
     services = LayerServices(
         generator=_Flaky(),  # type: ignore[arg-type]
-        renderer=None,  # type: ignore[arg-type]
+        renderer=RecordingRenderer([clean()]),
         workdir=Path("/tmp/unused"),
         budgets=RetryBudgets(),
     )

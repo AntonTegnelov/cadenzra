@@ -92,7 +92,7 @@ def derive_style(state: PipelineState, services: LayerServices) -> PipelineState
     style = _converge(
         generate,
         lambda candidate: validate_style_pack(
-            candidate, services.renderer, services.workdir / "style"
+            candidate, state.spec, services.renderer, services.workdir / "style"
         ),
         budget=services.budgets.structure,
         loop_key=attempt_key("structure", None, None),

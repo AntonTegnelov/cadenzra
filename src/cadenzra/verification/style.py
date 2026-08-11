@@ -15,6 +15,7 @@ from cadenzra.common.errors import LilypondCompileError
 from cadenzra.interfaces.rendering import ScoreRenderer
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.primitives.meter import MeterSpec
+from cadenzra.model.spec import PieceSpec
 from cadenzra.model.style import StylePack
 from cadenzra.notation.scaffold import scaffold_fragment
 from cadenzra.rendering.lilypond import first_error
@@ -31,10 +32,23 @@ _DOUBLING_WORDS: Final = ("doubl", "parallel", "unison")
 
 
 def validate_style_pack(
-    style: StylePack, renderer: ScoreRenderer, workdir: Path
+    style: StylePack, spec: PieceSpec, renderer: ScoreRenderer, workdir: Path
 ) -> list[FeedbackItem]:
     """Check one style pack. An empty list means it is accepted."""
     feedback = _check_coherence(style)
+    for meter in spec.meters_allowed:
+        if not style.cells_for(meter):
+            # Cells are the odd-meter mechanism (docs/04): a pack with none
+            # for an allowed meter silently degraded every voice prompt in
+            # sections using it — the quiet kind of failure.
+            feedback.append(
+                _item(
+                    f"the pack has no rhythmic cells for "
+                    f"{meter.surface_string()}, one of this piece's meters; "
+                    "give at least two one-bar cells for it — the composer "
+                    "builds every bar's rhythm from them"
+                )
+            )
     for index, cell in enumerate(style.rhythmic_cells):
         # A cell is exactly one bar of rhythm without its bar check; the
         # check is appended so the compiler can judge "fills the bar".
