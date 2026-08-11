@@ -34,6 +34,7 @@ from cadenzra.model.structure import (
 from cadenzra.model.style import StylePack
 from cadenzra.model.voice import VoicePart
 from cadenzra.notation.scaffold import count_bar_checks, splice_bars, split_bars
+from cadenzra.verification.midi_analysis import NoteEvent
 from tests.fakes.generator import ScriptedGenerator
 from tests.fakes.renderer import RecordingRenderer, clean, failing_bar_check
 
@@ -580,6 +581,85 @@ def test_feedback_inside_a_prescribed_entry_carries_the_prescription(
     assert untouched.message == unplaced_item.message, (
         "an item with no bar to pin cannot be attributed to the entry"
     )
+
+
+def _events_for(pitches_and_durations: list[tuple[int, str]]) -> list[NoteEvent]:
+    from fractions import Fraction as F
+
+    events = []
+    cursor = F(0)
+    for pitch, dur in pitches_and_durations:
+        length = {"8": F(1, 8), "4": F(1, 4), "4.": F(3, 8), "2": F(1, 2), "1": F(1)}[
+            dur
+        ]
+        events.append(
+            NoteEvent(
+                midi_pitch=pitch, onset=cursor, duration=length, velocity=80, channel=0
+            )
+        )
+        cursor += length
+    return events
+
+
+def test_a_rewrite_cannot_break_a_prescribed_entry(tmp_path: Path) -> None:
+    """The named escalation, now earned: with the prescription in the prompt,
+    a live rewrite under a wall of cross-voice complaints still paraphrased
+    its entry — three entries broken in one sweep, and every downstream
+    guarantee (the pinned grid, the entry check) fell with them. The
+    prescribed bars are not the model's to write, so they are not left to
+    the model to copy: they are spliced in deterministically."""
+    motifs = MotifLibrary(
+        motifs={"m": Motif(motif_id="m", role="subject", lily_music=GOOD)}
+    )
+    events = _events_for([(69, "8"), (69, "8"), (71, "8"), (71, "8"), (72, "4.")])
+    section = _loop_section(
+        MaterialEntry(motif_id="m", voice_id="alto", bar=1, relation="exact")
+    )
+    paraphrased = "g'8 g' a' a' b'4. |"
+    generator = ScriptedGenerator([paraphrased])
+    services = _loop_services(generator, RecordingRenderer([clean()]), tmp_path)
+
+    part = _voice_to_convergence(
+        _loop_state(section, motifs=motifs),
+        services,
+        section,
+        "alto",
+        motif_events={"m": events},
+    )
+
+    assert "a'8 a'8 b'8 b'8 c''4. |" in part.lily_music
+    assert "g'8" not in part.lily_music
+
+
+def test_an_open_final_bar_of_a_prescription_stays_the_models_to_complete(
+    tmp_path: Path,
+) -> None:
+    """Only the complete bars are spliced: a prescription ending mid-bar
+    leaves its final bar open for the composer, exactly as the prompt says."""
+    motifs = MotifLibrary(
+        motifs={"m": Motif(motif_id="m", role="subject", lily_music=f"{GOOD} c''4 |")}
+    )
+    # One full 7/8 bar, then a lone quarter: the rebar leaves bar 2 open.
+    events = _events_for(
+        [(69, "8"), (69, "8"), (71, "8"), (71, "8"), (72, "4."), (72, "4")]
+    )
+    section = _loop_section(
+        MaterialEntry(motif_id="m", voice_id="alto", bar=1, relation="exact")
+    ).model_copy(update={"bars": 2})
+    written = "g'8 g' a' a' b'4. |\nc''4 b'8 a'8 g'4 |"
+    generator = ScriptedGenerator([written])
+    services = _loop_services(generator, RecordingRenderer([clean()]), tmp_path)
+
+    part = _voice_to_convergence(
+        _loop_state(section, motifs=motifs),
+        services,
+        section,
+        "alto",
+        motif_events={"m": events},
+    )
+
+    assert "a'8 a'8 b'8 b'8 c''4. |" in part.lily_music, "bar 1 is spliced"
+    assert "c''4 b'8 a'8 g'4 |" in part.lily_music, "the open bar 2 stays as written"
 
 
 def test_a_compile_failure_is_never_patched(tmp_path: Path) -> None:

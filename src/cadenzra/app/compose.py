@@ -432,6 +432,42 @@ def _offered_feedback(
     return kept
 
 
+def _splice_prescriptions(
+    part: VoicePart, materials: list[MaterialInstruction]
+) -> VoicePart:
+    """A part carries its prescribed entries verbatim, mechanically.
+
+    The prompt hands the finished bars over, and a live rewrite under a wall
+    of cross-voice complaints still paraphrased them — three entries broken
+    in one sweep, taking the pinned-grid and entry-check guarantees with
+    them. The bars are not the model's to write, so they are not left to the
+    model to copy. Only complete bars are spliced: a prescription ending
+    mid-bar leaves its final bar to the composer, exactly as the prompt
+    says. Splicing is skipped where the part is too short to hold the span —
+    the validators own that failure.
+    """
+    total = count_bar_checks(part.lily_music)
+    replacements: dict[int, str] = {}
+    for instruction in materials:
+        text = instruction.prescribed_lily
+        if text is None or not instruction.prescribed_bars or "|" not in text:
+            continue
+        # Prescriptions come from `rebar_events`, which never writes quoted
+        # pipes or \bar commands — the plain rindex is safe on this text.
+        complete = text[: text.rindex("|") + 1]
+        bars = split_bars(complete)
+        targets = instruction.prescribed_bars[: len(bars)]
+        if not targets or targets[-1] > total:
+            continue
+        for bar, content in zip(targets, bars, strict=False):
+            replacements[bar] = content.strip()
+    if not replacements:
+        return part
+    return part.model_copy(
+        update={"lily_music": splice_bars(part.lily_music, replacements)}
+    )
+
+
 def _entry_aware(
     feedback: list[FeedbackItem],
     section: SectionPlan,
@@ -589,6 +625,7 @@ def _voice_to_convergence(
                         siblings=siblings or {},
                     )
                 )
+                part = _splice_prescriptions(part, materials)
         except LLMOutputError as error:
             # Unparseable output is a rejection whose diagnosis is already
             # written; the next attempt gets it verbatim rather than the run
