@@ -51,7 +51,7 @@ from cadenzra.verification.lyrics import validate_lyric_plan
 from cadenzra.verification.midi_analysis import NoteEvent, extract_voice_notes
 from cadenzra.verification.motifs import validate_motifs
 from cadenzra.verification.structure import validate_structure
-from cadenzra.verification.style import validate_style_pack
+from cadenzra.verification.style import salvage_exemplars, validate_style_pack
 
 _log = logging.getLogger(__name__)
 
@@ -87,7 +87,15 @@ def derive_style(state: PipelineState, services: LayerServices) -> PipelineState
     _log.info("deriving the style pack")
 
     def generate(feedback: list[FeedbackItem]) -> StylePack:
-        return services.generator.derive_style_pack(state.spec, feedback)
+        # A broken exemplar simply is not one: salvage keeps the accepted
+        # material instead of letting one bad dotted cell re-roll the whole
+        # pack. The validator below still judges what remains — a meter
+        # left bare by the drops is rejected there with the teaching.
+        return salvage_exemplars(
+            services.generator.derive_style_pack(state.spec, feedback),
+            services.renderer,
+            services.workdir / "style-salvage",
+        )
 
     style = _converge(
         generate,

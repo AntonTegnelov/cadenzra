@@ -7,6 +7,7 @@ the whole piece. `model/style.py` claimed a compile check for years; the
 orchestra probe's pack shipped `\\clef` fragments because none existed.
 """
 
+import logging
 import re
 from pathlib import Path
 from typing import Final
@@ -22,6 +23,8 @@ from cadenzra.rendering.lilypond import first_error
 from cadenzra.verification.voice import FORBIDDEN_COMMANDS, deficit_text
 
 SOURCE: Final = "validate_style"
+
+_log = logging.getLogger(__name__)
 
 _COMMAND = re.compile(r"\\(?P<name>[A-Za-z]+)")
 
@@ -68,6 +71,53 @@ def validate_style_pack(
             what=f"the fragment '{fragment.lily}'",
         )
     return feedback
+
+
+def salvage_exemplars(
+    style: StylePack, renderer: ScoreRenderer, workdir: Path
+) -> StylePack:
+    """The pack with its broken exemplars dropped.
+
+    Every style retry regenerates the whole pack, so one bad dotted cell
+    anywhere re-rolls ten exemplars — a live loop died at six attempts with
+    a different near-miss each time. An exemplar that does not survive the
+    gates simply is not one (the same forgiving-filter contract the lyric
+    device vocabulary carries); what remains still faces the full
+    validators, so a meter left bare is rejected there with the teaching.
+    """
+    cells = [
+        cell
+        for index, cell in enumerate(style.rhythmic_cells)
+        if not _check_exemplar(
+            f"{cell.lily} |",
+            cell.meter,
+            renderer,
+            workdir / f"salvage-cell-{index}",
+            what=f"the rhythmic cell '{cell.lily}'",
+        )
+    ]
+    fragments = [
+        fragment
+        for index, fragment in enumerate(style.few_shot_fragments)
+        if not _check_exemplar(
+            fragment.lily,
+            fragment.meter,
+            renderer,
+            workdir / f"salvage-fragment-{index}",
+            what=f"the fragment '{fragment.lily}'",
+        )
+    ]
+    if len(cells) < len(style.rhythmic_cells) or len(fragments) < len(
+        style.few_shot_fragments
+    ):
+        _log.info(
+            "dropped %d broken cell(s) and %d broken fragment(s) from the pack",
+            len(style.rhythmic_cells) - len(cells),
+            len(style.few_shot_fragments) - len(fragments),
+        )
+    return style.model_copy(
+        update={"rhythmic_cells": cells, "few_shot_fragments": fragments}
+    )
 
 
 def _check_coherence(style: StylePack) -> list[FeedbackItem]:

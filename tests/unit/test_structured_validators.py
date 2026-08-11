@@ -250,6 +250,35 @@ def _cell_spec() -> PieceSpec:
     return _spec(meters_allowed=[SEVEN_EIGHT])
 
 
+def test_broken_exemplars_are_dropped_not_fatal() -> None:
+    """Every style retry regenerates the whole pack, so one bad dotted cell
+    anywhere re-rolls ten exemplars — a live loop went 2 -> 2 -> 2 -> 1 ->
+    4 -> 3 and died at six attempts. An exemplar that does not fill its bar
+    simply is not one (the vocabulary-is-the-contract precedent): salvage
+    keeps the accepted material and drops the broken, and the validators
+    then judge what remains — coverage still rejects a meter left bare."""
+    from cadenzra.model.style import RhythmicCell, StyleFragment, StylePack
+    from cadenzra.verification.style import salvage_exemplars
+    from tests.fakes.renderer import RecordingRenderer, clean, failing_bar_check
+
+    pack = StylePack(
+        rhythmic_cells=[
+            RhythmicCell(meter=SEVEN_EIGHT, lily="c4. c4 c4", description="bad"),
+            RhythmicCell(meter=SEVEN_EIGHT, lily="c8 c c c c4.", description="good"),
+        ],
+        few_shot_fragments=[
+            StyleFragment(meter=SEVEN_EIGHT, lily="a'8 a' b' b' c''4. |")
+        ],
+    )
+    # Exemplars compile in order: bad cell, good cell, fragment.
+    renderer = RecordingRenderer([failing_bar_check(line=9), clean(), clean()])
+
+    salvaged = salvage_exemplars(pack, renderer, Path("/tmp/unused"))
+
+    assert [cell.description for cell in salvaged.rhythmic_cells] == ["good"]
+    assert len(salvaged.few_shot_fragments) == 1, "the clean fragment survives"
+
+
 def test_a_meter_with_no_rhythmic_cells_is_rejected() -> None:
     """The prompt asks for two cells per allowed meter and nothing counted
     them: a pack with zero cells for a section's meter silently degraded
