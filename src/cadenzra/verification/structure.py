@@ -168,7 +168,9 @@ def _check_material(plan: StructurePlan, spec: PieceSpec) -> list[FeedbackItem]:
                         message=(
                             f"the entry at bar {entry.bar} of section "
                             f"{section.section_id} is given to {entry.voice_id}, which "
-                            "is not singing in that section"
+                            "is not singing in that section — an entry's voice must "
+                            "be in the section's active_voices; add it there, or "
+                            "move the entry to a voice that is"
                         ),
                     )
                 )

@@ -431,6 +431,12 @@ def test_an_unreadable_chord_symbol_is_rejected_with_examples() -> None:
     assert len(feedback) == 1
     assert "Qx" in feedback[0].message
     assert "Esus4" in feedback[0].message
+    # The rejection teaches the grammar it enforces, generated from the
+    # parser's own table — rich on failure, absent from first prompts
+    # (docs/08: lean surface, teaching rejections).
+    assert "m7b5" in feedback[0].message
+    assert "sus2" in feedback[0].message
+    assert "/bass" in feedback[0].message
 
 
 @pytest.mark.parametrize("meter", [SEVEN_EIGHT, FIVE_FOUR, FOUR_FOUR])

@@ -136,6 +136,16 @@ _EXTENSION = re.compile(r"\((?P<inside>[^)]*)\)|add(?P<added>[b#]?\d+)")
 _BARE_ALTERATION = re.compile(r"(?P<alteration>[b#](?:5|6|9|11|13))$")
 
 
+def known_chord_qualities() -> str:
+    """The accepted quality tokens, for rejections that teach the grammar.
+
+    Generated from the parser's own table so the teaching and the enforcement
+    cannot drift; a rejection is paid only on failure, so it may be rich
+    (docs/08: rare constraints are taught by the rejection that catches them).
+    """
+    return ", ".join(sorted(key for key in _QUALITY_INTERVALS if key))
+
+
 def parse_chord_symbol(symbol: str) -> ParsedChord:
     """Parse "Dm", "Esus4/B", "D5", "Dm(b9)" into a pitch-class set."""
     text = symbol.strip()

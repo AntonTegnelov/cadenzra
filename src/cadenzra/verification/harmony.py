@@ -17,7 +17,11 @@ from cadenzra.model.primitives.ids import MotifId
 from cadenzra.model.primitives.pitch import Pitch
 from cadenzra.model.primitives.time import format_bar_beat, offset_of, section_length
 from cadenzra.model.structure import SectionPlan
-from cadenzra.notation.chords import ChordSymbolError, parse_chord_symbol
+from cadenzra.notation.chords import (
+    ChordSymbolError,
+    known_chord_qualities,
+    parse_chord_symbol,
+)
 from cadenzra.notation.keys import prefer_flats
 from cadenzra.verification.midi_analysis import NoteEvent
 from cadenzra.verification.section import (
@@ -141,7 +145,10 @@ def _check_symbols(
                     message=(
                         f"the chord {event.chord!r} at "
                         f"{format_bar_beat(event.offset, section.meter)} is not a chord "
-                        "symbol the system reads; use forms like Dm, Esus4, F#m7, Bb/D"
+                        "symbol the system reads; use forms like Dm, Esus4, F#m7, "
+                        "Bb/D — a root, one quality from "
+                        f"[{known_chord_qualities()}], optional alterations like "
+                        "b9/#11 in parentheses, and an optional /bass"
                     ),
                     evidence=str(error),
                 )
