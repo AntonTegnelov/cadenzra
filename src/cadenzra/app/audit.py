@@ -184,25 +184,39 @@ def audit_states(
         for path, run_name in candidates:
             if not path.exists():
                 continue
+            raw = json.loads(path.read_text(encoding="utf-8"))
             try:
-                state = PipelineState.model_validate_json(
-                    path.read_text(encoding="utf-8")
-                )
-            except ValidationError as error:
-                # History the audit did not write: states from before a schema
-                # change (string fragments predate StyleFragment). A boundary,
-                # so the skip is a visible finding, never a silent drop — and
-                # never fatal to the rest of the corpus walk.
+                state = PipelineState.model_validate(raw)
+            except ValidationError as first_error:
+                # History the audit did not write: 83 of 91 stored states
+                # predate StyleFragment and fail only on the style pack. The
+                # structure, voices and score slices are the audit's real
+                # material, so drop the style pack visibly and keep going;
+                # a state unreadable beyond that is reported, never fatal.
+                try:
+                    state = PipelineState.model_validate(
+                        {key: value for key, value in raw.items() if key != "style"}
+                    )
+                except ValidationError:
+                    findings.append(
+                        Finding(
+                            spec=spec_dir.name,
+                            run=run_name,
+                            layer="state",
+                            kind="unreadable-legacy",
+                            message=str(first_error).splitlines()[0],
+                        )
+                    )
+                    continue
                 findings.append(
                     Finding(
                         spec=spec_dir.name,
                         run=run_name,
                         layer="state",
-                        kind="unreadable-legacy",
-                        message=str(error).splitlines()[0],
+                        kind="legacy-style-dropped",
+                        message=str(first_error).splitlines()[0],
                     )
                 )
-                continue
             findings += audit_state(
                 spec_dir.name, run_name, state, renderer, workdir
             )

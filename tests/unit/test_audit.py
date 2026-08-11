@@ -128,8 +128,12 @@ def test_a_legacy_state_is_reported_not_fatal(tmp_path: Path) -> None:
     findings = audit_states(out, RecordingRenderer(), tmp_path / "w")
 
     legacy_findings = [f for f in findings if f.spec == "legacy"]
-    assert len(legacy_findings) == 1
-    assert legacy_findings[0].kind == "unreadable-legacy"
+    assert any(f.kind == "legacy-style-dropped" for f in legacy_findings), (
+        "the unreadable style pack is dropped visibly, not fatally"
+    )
+    assert any(
+        f.spec == "legacy" and f.layer == "structure" for f in findings
+    ), "the readable slices of a legacy state are still audited"
     assert any(f.spec == "probe" for f in findings), "the walk continued"
 
 
