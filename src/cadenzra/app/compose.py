@@ -25,6 +25,7 @@ from cadenzra.app.config import RunConfig
 from cadenzra.app.pipeline import (
     LayerServices,
     analyzed_motifs,
+    cumulative_feedback,
     derive_style,
     feedback_dicts,
     generate_harmony,
@@ -595,9 +596,17 @@ def _voice_to_convergence(
     attempt = 0
     cycle = 0
 
+    history: dict[str, FeedbackItem] = {
+        item.fingerprint(): item for item in feedback
+    }
     while attempt < services.budgets.voice:
         cycle += 1
         shown = {item.fingerprint() for item in feedback}
+        # Cleared faults ride along as keep-fixed reminders (docs/08's
+        # cumulative-retry contract); patches see only the ones touching
+        # their offered bars, the same rule their live feedback follows.
+        cumulative = cumulative_feedback(feedback, history)
+        stay_fixed = cumulative[len(feedback) :]
         editable = _editable_bars(feedback, rejected, section, protected)
         patching = bool(editable) and patch_attempts < _PATCH_ATTEMPTS
         if not patching and patch_only:
@@ -622,7 +631,13 @@ def _voice_to_convergence(
                         part=rejected,
                         editable_bars=editable,
                         feedback=_offered_feedback(feedback, editable, section)
-                        + parser_note,
+                        + parser_note
+                        + [
+                            item
+                            for item in stay_fixed
+                            if (bars := _item_bars(item, section)) is not None
+                            and bars & set(editable)
+                        ],
                         siblings=siblings or {},
                     )
                 )
@@ -644,7 +659,7 @@ def _voice_to_convergence(
                         previous_tail=tail[0] if tail else None,
                         previous_meter=tail[1] if tail else None,
                         rejected=rejected,
-                        feedback=feedback,
+                        feedback=cumulative,
                         siblings=siblings or {},
                     )
                 )
@@ -688,6 +703,8 @@ def _voice_to_convergence(
             section,
             materials,
         )
+        for item in feedback:
+            history.setdefault(item.fingerprint(), item)
         if not feedback:
             return part
         if patching:

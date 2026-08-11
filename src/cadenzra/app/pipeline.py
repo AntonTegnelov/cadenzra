@@ -414,6 +414,36 @@ def feedback_dicts(
     return dicts
 
 
+# Keep-fixed reminders shown per attempt; the newest faults matter most and
+# an unbounded list would crowd out the actual ask.
+_RESOLVED_CAP = 10
+
+
+def cumulative_feedback(
+    current: list[FeedbackItem], history: dict[str, FeedbackItem]
+) -> list[FeedbackItem]:
+    """Current faults, plus a keep-fixed reminder for each one already cleared.
+
+    The design principle's cumulative half (docs/08): attempt 2 fixes fault A
+    but introduces fault B; shown only B, attempt 3 trades A back for B
+    forever. Every fault the loop has raised rides along — the open ones as
+    the ask, the cleared ones decorated so they stay fixed.
+    """
+    open_now = {item.fingerprint() for item in current}
+    resolved = [
+        item for fingerprint, item in history.items() if fingerprint not in open_now
+    ]
+    return current + [
+        item.model_copy(
+            update={
+                "message": item.message
+                + " — this was fixed in an earlier attempt; keep it fixed"
+            }
+        )
+        for item in resolved[-_RESOLVED_CAP:]
+    ]
+
+
 def _converge[T](
     generate: Callable[[list[FeedbackItem]], T],
     validate: Callable[[T], list[FeedbackItem]],
@@ -434,9 +464,12 @@ def _converge[T](
     regrid loop-back hands the assembly's evidence to the harmony layer here.
     """
     feedback: list[FeedbackItem] = list(prior or [])
+    history: dict[str, FeedbackItem] = {
+        item.fingerprint(): item for item in feedback
+    }
     for attempt in range(1, budget + 1):
         try:
-            candidate = generate(feedback)
+            candidate = generate(cumulative_feedback(feedback, history))
         except LLMOutputError as error:
             # An artifact that will not parse is a rejection like any other,
             # and the parser's complaint is the diagnosis — quoted, not
@@ -464,6 +497,8 @@ def _converge[T](
             continue
 
         feedback = validate(candidate)
+        for item in feedback:
+            history.setdefault(item.fingerprint(), item)
         if not feedback:
             return candidate
         _log.warning(

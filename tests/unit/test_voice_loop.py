@@ -275,6 +275,95 @@ def test_the_generator_receives_the_musician_facing_context(tmp_path: Path) -> N
     assert ctx.section.meter.surface_string() == "7/8 (2+2+3)"
 
 
+def test_the_third_attempt_sees_every_fault_the_loop_has_raised() -> None:
+    """The design principle's cumulative half: attempt 2 fixes fault A but
+    introduces fault B; if attempt 3 sees only B, the model trades A for B
+    forever. It must see B to fix and A as a keep-fixed reminder."""
+    from fractions import Fraction as F
+
+    from cadenzra.app.pipeline import _converge
+
+    fault_a = FeedbackItem(
+        source="validate_harmony",
+        level="harmony",
+        section_id="A",
+        location=F(0),
+        kind="gap",
+        message="nothing is harmonized in bar 1",
+    )
+    fault_b = fault_a.model_copy(
+        update={"location": F(1), "message": "the chord at bar 2 overlaps"}
+    )
+    seen: list[list[str]] = []
+
+    def generate(feedback: list[FeedbackItem]) -> int:
+        seen.append([item.message for item in feedback])
+        return len(seen)
+
+    def validate(candidate: int) -> list[FeedbackItem]:
+        return {1: [fault_a], 2: [fault_b], 3: []}[candidate]
+
+    _converge(generate, validate, budget=4, loop_key="harmony:A", what="the grid")
+
+    third = seen[2]
+    assert any("overlaps" in message for message in third), "B is the ask"
+    assert any(
+        "bar 1" in message and "keep it fixed" in message for message in third
+    ), "A rides along as a keep-fixed reminder"
+
+
+def test_a_voice_repair_carries_its_cleared_faults_forward(
+    tmp_path: Path,
+) -> None:
+    """Same contract inside the voice loop, patch edition: the cross-voice
+    fault the first patch cleared must still be visible to the second patch
+    of the same bar, decorated as already fixed, beside the new fault — or
+    the fix for the meter reinstates the parallel."""
+    from fractions import Fraction as F
+
+    from cadenzra.app.compose import ComposeServices, _voice_to_convergence
+    from cadenzra.model.voice import VoicePart
+
+    parallel = FeedbackItem(
+        source="validate_section",
+        level="section",
+        section_id="A",
+        voice_id="alto",
+        location=F(0),
+        kind="parallels",
+        message="alto and viola move in parallel octaves into bar 1, beat 1",
+    )
+    generator = ScriptedGenerator(patches=[{1: BAD}, {1: GOOD}])
+    renderer = RecordingRenderer([failing_bar_check(line=9), clean()])
+    services = ComposeServices(
+        generator=generator,
+        renderer=renderer,
+        workdir=tmp_path,
+        budgets=RetryBudgets(),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+    state = _state(
+        voices={
+            voice_key("A", "alto"): VoicePart(
+                section_id="A", voice_id="alto", lily_music=BAD
+            )
+        }
+    )
+
+    part = _voice_to_convergence(
+        state, services, SECTION, "alto", prior=[parallel]
+    )
+
+    assert part.lily_music.strip() == GOOD
+    second = [item.message for item in generator.patch_contexts[1].feedback]
+    assert any("does not fill" in message for message in second), "the new fault"
+    assert any(
+        "parallel octaves" in message and "keep it fixed" in message
+        for message in second
+    ), "the cleared parallel rides along on the re-offered bar"
+
+
 def test_a_malformed_artifact_is_a_rejection_not_the_end_of_the_run() -> None:
     """A model that returns an unparseable plan should be told what was wrong
     and asked again — ending the run over it wastes an entire budget on
