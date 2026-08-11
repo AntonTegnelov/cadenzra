@@ -752,6 +752,37 @@ def test_an_open_prescription_is_decorated_as_a_beginning_not_a_whole(
     assert "complete" in decorated.message
 
 
+def test_a_sweep_repair_yields_the_original_part_not_a_failed_patch(
+    tmp_path: Path,
+) -> None:
+    """Live, a patch wrote a duration that does not exist (aes34); its
+    compile-failure item is location-less, so the patch-only branch bailed —
+    returning the *broken patched part*, which then killed the whole run at
+    the assembled-score compile. The only assembly-safe part a repair loop
+    holds is the one it started from: yields return that, always."""
+    from cadenzra.common.errors import LilypondCompileError
+
+    broken_patch = "aes34 g34 f34 ees34 |"
+    generator = ScriptedGenerator(patches=[{1: broken_patch}])
+    renderer = RecordingRenderer(
+        [LilypondCompileError("LilyPond exited 1", output="error: not a duration")]
+    )
+    services = _loop_services(generator, renderer, tmp_path)
+    section = _loop_section()
+
+    part = _voice_to_convergence(
+        _loop_state(section),
+        services,
+        section,
+        "alto",
+        prior=[_bar_scoped_item()],
+        patch_only=True,
+    )
+
+    assert part.lily_music == BAD, "the standing, validated part comes back"
+    assert "aes34" not in part.lily_music
+
+
 def test_a_sweep_repair_never_falls_back_to_a_full_rewrite(tmp_path: Path) -> None:
     """During a cross-voice sweep every part has already passed its own
     checks, and a full rewrite is where fresh faults pour in — one rewritten

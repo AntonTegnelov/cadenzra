@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from cadenzra.common.errors import LilypondCompileError
 from cadenzra.model.artifacts import BarCheckWarning, CompileResult
 
 
@@ -9,10 +10,14 @@ class RecordingRenderer:
     """Returns a scripted verdict per call and remembers every source.
 
     Scripted verdicts are keyed by call index, so a test can say "the first
-    compile fails a bar check, the second is clean" without any real LilyPond.
+    compile fails a bar check, the second is clean" without any real
+    LilyPond. A verdict may also be a `LilypondCompileError`, which is
+    raised — how the real adapter reports source that does not compile.
     """
 
-    def __init__(self, verdicts: list[CompileResult] | None = None) -> None:
+    def __init__(
+        self, verdicts: list[CompileResult | LilypondCompileError] | None = None
+    ) -> None:
         self._verdicts = list(verdicts or [])
         self.sources: list[str] = []
 
@@ -21,7 +26,10 @@ class RecordingRenderer:
         if not self._verdicts:
             return CompileResult(ok=True)
         index = min(len(self.sources) - 1, len(self._verdicts) - 1)
-        return self._verdicts[index]
+        verdict = self._verdicts[index]
+        if isinstance(verdict, LilypondCompileError):
+            raise verdict
+        return verdict
 
     @property
     def calls(self) -> int:

@@ -590,6 +590,12 @@ def _voice_to_convergence(
         state.voices.get(voice_key(section.section_id, voice_id)) if prior else None
     )
     protected = _protected_bars(materials, state)
+    # The only assembly-safe part this loop ever holds: everything else in
+    # `rejected` is a candidate that failed validation. patch_only yields
+    # return this — live, a bailed repair once returned a patch whose
+    # durations did not even parse (aes34), and the assembled score died on
+    # it terminally.
+    standing = rejected
     patch_attempts = 0
     offered: set[int] = set()  # bars ever offered against the current part text
     parser_note: list[FeedbackItem] = []  # a rejected patch's own diagnosis
@@ -613,11 +619,11 @@ def _voice_to_convergence(
             # A sweep repair never falls back to a full rewrite: the part
             # already passed its own checks, and a rewrite is where fresh
             # cross-voice faults pour in — one rewritten viola injected
-            # twelve, live. The part goes back as it stands; the sweep
-            # re-flags what remains and the alternating router hands it to
-            # the partner voice next time.
-            assert rejected is not None  # patch_only repairs start from a part
-            return rejected
+            # twelve, live. The *standing* part goes back — never a failed
+            # patch — and the sweep re-flags what remains while the
+            # alternating router hands it to the partner voice next time.
+            assert standing is not None  # patch_only repairs start from a part
+            return standing
         if not patching:
             attempt += 1
         try:
