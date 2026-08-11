@@ -33,6 +33,7 @@ from cadenzra.model.structure import MaterialBrief, SectionPlan, StructurePlan
 from cadenzra.model.style import StylePack
 from cadenzra.notation.keys import prefer_flats
 from cadenzra.verification.harmony import chords_containing
+from cadenzra.verification.motifs import MAX_MOTIF_NOTES
 
 STYLE_SYSTEM = """\
 You are a musician translating a style brief into concrete working material \
@@ -180,7 +181,9 @@ def build_motif_prompt(
                 else ""
             )
             + f" Write it in {_meter_of(brief).surface_string()}, every bar "
-            "filling that meter exactly."
+            "filling that meter exactly, and keep it to at most "
+            f"{MAX_MOTIF_NOTES} notes — a phrase of one to four bars that "
+            "every entry can reproduce exactly."
             for brief in briefs
         ),
         # Without this, a brief carried by three voices comes back as three

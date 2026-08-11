@@ -650,6 +650,29 @@ def test_the_motif_prompt_asks_for_one_line_per_brief_not_one_per_voice() -> Non
     assert "not how many versions to write" in prompt
 
 
+def test_the_motif_prompt_states_the_note_cap_up_front() -> None:
+    """The 12-note cap lived only in the validator, so a live motif loop
+    burned eight attempts discovering constraints one rejection at a time —
+    13-note subjects three separate times. The brief states the cap where
+    the request is made."""
+    from cadenzra.llm.prompts.structured import build_motif_prompt
+    from cadenzra.model.spec import PieceSpec
+    from cadenzra.model.structure import MaterialBrief, StructurePlan
+
+    spec = PieceSpec(
+        title="T",
+        style_prompt="s",
+        voices=[ALTO],
+        meters_allowed=[SEVEN_EIGHT],
+        target_minutes=1.0,
+    )
+    briefs = [MaterialBrief(motif_id="subject", role="fugue subject", description="")]
+
+    prompt = build_motif_prompt(briefs, spec, STYLE, StructurePlan(sections=[SECTION]))
+
+    assert "at most 12 notes" in prompt
+
+
 def test_the_motif_prompt_shows_a_bar_that_actually_fills_its_meter() -> None:
     """The ranges above it are shown as `C3 (c) up to A4 (a')`, and a model
     reading the scientific half writes `b3 4 fis4 8`. A worked example fixes
