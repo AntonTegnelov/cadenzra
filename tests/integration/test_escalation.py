@@ -299,3 +299,57 @@ def test_a_stalled_repair_loop_stops_at_the_plateau(tmp_path: Path) -> None:
     assert caught.value.attempts == RetryBudgets().section
     repairs = generator.calls + len(generator.patch_contexts)
     assert repairs <= 2 * RetryBudgets().section, "cheap tail sweeps, bounded"
+
+
+def test_the_last_repair_is_verified_before_the_run_dies(tmp_path: Path) -> None:
+    """The loop was verify-then-repair: the final sweep's repair was paid
+    for and never checked, and a live run died quoting feedback one repair
+    stale — while its actual final parts were clean. The post-loop
+    verification claims what was already bought."""
+    from tests.fakes.generator import ScriptedGenerator
+
+    free_section = SECTION.model_copy(update={"material": []})
+    spec = PieceSpec(
+        title="LastRepair",
+        style_prompt="s",
+        voices=[UPPER, LOWER],
+        meters_allowed=[FOUR_FOUR],
+        target_minutes=4 / 90,
+    )
+    state = PipelineState(
+        spec=spec,
+        style=StylePack(parallel_fifths_policy="forbid"),
+        structure=StructurePlan(sections=[free_section]),
+        harmony={
+            "A": HarmonicSkeleton(
+                section_id="A",
+                events=[
+                    HarmonicEvent(offset=Fraction(0), duration=Fraction(1), chord="C")
+                ],
+            )
+        },
+        voices={
+            voice_key("A", "soprano"): VoicePart(
+                section_id="A", voice_id="soprano", lily_music=UPPER_MUSIC
+            ),
+            voice_key("A", "alto"): VoicePart(
+                section_id="A", voice_id="alto", lily_music=LOWER_MUSIC
+            ),
+        },
+    )
+    # Budget of one sweep: the single repair fixes the parallel, and only
+    # the post-loop verification can see that it did.
+    fixed = "e''4 c''4 g''4 d''4 |"
+    generator = ScriptedGenerator(patches=[{1: fixed}])
+    services = ComposeServices(
+        generator=generator,
+        renderer=LilypondAdapter(),
+        workdir=tmp_path / "work",
+        budgets=RetryBudgets(section=1),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+
+    result = assemble_and_verify(state, services)
+
+    assert result.voices[voice_key("A", "soprano")].lily_music.strip() == fixed

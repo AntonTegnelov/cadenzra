@@ -1285,6 +1285,14 @@ def assemble_and_verify(
         if state.lyric_plan is not None:
             state = generate_lyrics(state, services, only=rewritten)
 
+    # The loop is verify-then-repair, so the final sweep's repair was paid
+    # for and never checked — a live run died quoting feedback one repair
+    # stale while its actual parts were clean. Claim what was bought.
+    state = assemble(state, services)
+    feedback = _verify_assembled(state, services)
+    if not feedback:
+        return state
+
     raise BudgetExhaustedError(
         "the assembled score still fails cross-voice checks after "
         f"{services.budgets.section} attempts: "
