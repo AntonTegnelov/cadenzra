@@ -167,7 +167,13 @@ def check_entries_against_grid(
     prescription hands the voice to copy.
     """
     strict = is_strict(dissonance_policy)
-    feedback = []
+    flats = prefer_flats(section.key)
+    beat = section.meter.bar_length / section.meter.units_per_bar
+    # Every note the entries hold through each chord slot, gathered first:
+    # one failing slot is one item naming the whole requirement set. Two
+    # simultaneous subjects once pinned A and Ab through one slot, and six
+    # grids satisfied each single-note complaint by breaking the other.
+    held: dict[int, list[tuple[str, Pitch]]] = {}
     for entry in section.material:
         subject = motif_notes.get(entry.motif_id)
         if not subject:
@@ -179,45 +185,102 @@ def check_entries_against_grid(
         predicted = predicted_entry(subject, relation.kind, relation.semitones)
         if predicted is None:
             continue
-        start = offset_of(entry.bar, 1, section.meter)
-        shift = start - subject[0].onset
+        shift = offset_of(entry.bar, 1, section.meter) - subject[0].onset
         for note in predicted:
             onset = note.onset + shift
-            for event in skeleton.events:
+            for index, event in enumerate(skeleton.events):
                 if not (event.offset < onset + note.duration and onset < event.end):
                     continue
-                try:
-                    chord = parse_chord_symbol(event.chord)
-                except ChordSymbolError:
-                    continue  # _check_symbols owns unreadable chords
-                pitch = Pitch.from_midi_number(
-                    note.midi_pitch, prefer_flats=prefer_flats(section.key)
+                sounding = min(onset + note.duration, event.end) - max(
+                    onset, event.offset
                 )
-                if pitch.pc12 in permitted_pitch_classes(chord, strict):
-                    continue
-                sounding = min(onset + note.duration, event.end) - max(onset, event.offset)
                 # Same definition of "held" as the section check: a share of
                 # the chord AND at least a beat — a pass here must guarantee
                 # no held-tone there, no more and no less.
-                beat = section.meter.bar_length / section.meter.units_per_bar
                 if sounding < max(event.duration * SUSTAINED_SHARE, beat):
                     continue
-                feedback.append(
-                    _item(
-                        section,
-                        location=onset,
-                        kind="entry_vs_grid",
-                        message=(
-                            f"the {entry.voice_id} entry at bar {entry.bar} holds "
-                            f"{pitch.to_scientific()} ({pitch.to_lilypond()}) through "
-                            f"{format_bar_beat(event.offset, section.meter)}, where the "
-                            f"grid declares {event.chord}; choose a chord there that "
-                            f"contains {pitch.to_scientific()} — the subject cannot "
-                            "change"
-                        ),
-                    )
-                )
+                pitch = Pitch.from_midi_number(note.midi_pitch, prefer_flats=flats)
+                slot = held.setdefault(index, [])
+                if (entry.voice_id, pitch) not in slot:
+                    slot.append((entry.voice_id, pitch))
+
+    feedback = []
+    for index, requirements in sorted(held.items()):
+        event = skeleton.events[index]
+        try:
+            chord = parse_chord_symbol(event.chord)
+        except ChordSymbolError:
+            continue  # _check_symbols owns unreadable chords
+        permitted = permitted_pitch_classes(chord, strict)
+        missing = [
+            (voice, pitch)
+            for voice, pitch in requirements
+            if pitch.pc12 not in permitted
+        ]
+        if not missing:
+            continue
+        example = _chord_containing({pitch.pc12 for _, pitch in requirements}, flats)
+        message = (
+            f"the entries hold {_tone_names(missing)} through "
+            f"{format_bar_beat(event.offset, section.meter)}, where the grid "
+            f"declares {event.chord}; the chord there must contain "
+            f"{_tone_names(requirements)} — the subjects cannot change"
+        )
+        if example is not None:
+            message += f"; one chord that does: {example}"
+        feedback.append(
+            _item(
+                section, location=event.offset, kind="entry_vs_grid", message=message
+            )
+        )
     return feedback
+
+
+def _tone_names(tones: list[tuple[str, Pitch]]) -> str:
+    return ", ".join(
+        f"{pitch.to_scientific()} ({pitch.to_lilypond()}, {voice})"
+        for voice, pitch in tones
+    )
+
+
+# Roots and qualities the example search draws on — every symbol here parses,
+# so whatever it suggests passes this same check by construction. Simple
+# qualities first: the first hit is the plainest chord that works.
+_EXAMPLE_QUALITIES: Final = (
+    "",
+    "m",
+    "7",
+    "m7",
+    "maj7",
+    "m6",
+    "m7b5",
+    "dim7",
+    "sus4",
+    "7b9",
+    "7#9",
+)
+_ROOTS_SHARP: Final = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+_ROOTS_FLAT: Final = ("C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B")
+
+
+def _chord_containing(pcs: set[int], flats: bool) -> str | None:
+    """A chord symbol holding every pc in `pcs` as a real chord tone, or None.
+
+    Arithmetic over the checker's own vocabulary — the suggestion passes this
+    same check by construction, handed over instead of left as a puzzle. The
+    search is strict on purpose: liberal mode would let a plain triad "cover"
+    a semitone pair through passing-tone allowances, and suggesting a chord
+    that merely tolerates the subjects is not an answer.
+    """
+    for quality in _EXAMPLE_QUALITIES:
+        for root in _ROOTS_FLAT if flats else _ROOTS_SHARP:
+            try:
+                chord = parse_chord_symbol(f"{root}{quality}")
+            except ChordSymbolError:
+                continue
+            if pcs <= permitted_pitch_classes(chord, strict=True):
+                return f"{root}{quality}"
+    return None
 
 
 def pinned_entry_tones(
