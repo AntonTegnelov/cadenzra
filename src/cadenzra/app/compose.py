@@ -43,6 +43,7 @@ from cadenzra.common.errors import (
 from cadenzra.graph.routing import cheapest_level
 from cadenzra.interfaces.critique import AudioCritic, FeedbackRouter
 from cadenzra.interfaces.rendering import Synthesizer
+from cadenzra.llm.prompts.surface import open_bar_completion
 from cadenzra.model.artifacts import AssembledSection, RenderedArtifacts
 from cadenzra.model.contexts import (
     LyricsContext,
@@ -523,7 +524,7 @@ def _entry_aware(
             # contradictory orders, and it obeyed the wrong one five times.
             advice = (
                 f"begin it exactly with: {text} — its final bar is left "
-                "open; complete that bar"
+                f"open; {open_bar_completion(hit)}"
             )
         decorated.append(
             item.model_copy(
@@ -1100,9 +1101,10 @@ def _materials_for(
         prescribed: str | None = None
         prescribed_bars: tuple[int, ...] = ()
         adjustable = 0
+        remainder: Fraction | None = None
         events = (motif_events or {}).get(entry.motif_id) or []
         if events:
-            prescribed, prescribed_bars, adjustable = _prescribed_entry(
+            prescribed, prescribed_bars, adjustable, remainder = _prescribed_entry(
                 entry, events, state.spec.voices_by_id[voice_id], section
             )
         instructions.append(
@@ -1117,6 +1119,7 @@ def _materials_for(
                 prescribed_lily=prescribed,
                 prescribed_bars=prescribed_bars,
                 max_adjustable=adjustable,
+                open_remainder=remainder,
             )
         )
     return instructions
@@ -1127,8 +1130,9 @@ def _prescribed_entry(
     events: list[NoteEvent],
     voice: VoiceSpec,
     section: SectionPlan,
-) -> tuple[str | None, tuple[int, ...], int]:
-    """The entry rendered ready to copy, its bar span, and its license.
+) -> tuple[str | None, tuple[int, ...], int, Fraction | None]:
+    """The entry rendered ready to copy, its bar span, its license, and how
+    much of its final bar the composer still has to write.
 
     Everything about a declared entry is determined: pitches and rhythm by
     the motif, the transform by the plan, and the register up to a whole
@@ -1140,7 +1144,7 @@ def _prescribed_entry(
     try:
         relation = parse_relation(entry.relation)
     except UnknownRelationError:
-        return None, (), 0  # the structure validator owns this failure
+        return None, (), 0, None  # the structure validator owns this failure
     adjustable = 0
     if relation.kind == "tonal answer":
         # The literal real answer: a fifth up, zero adjustments — which the
@@ -1192,10 +1196,13 @@ def _prescribed_entry(
             entry.motif_id,
             voice.voice_id,
         )
-        return None, (), adjustable
+        return None, (), adjustable, None
     total = max(event.onset + event.duration for event in placed)
     span = -(-total // section.meter.bar_length)  # ceil
-    return text, tuple(range(entry.bar, entry.bar + int(span))), adjustable
+    fill = total % section.meter.bar_length
+    remainder = section.meter.bar_length - fill if fill else None
+    bars = tuple(range(entry.bar, entry.bar + int(span)))
+    return text, bars, adjustable, remainder
 
 
 def _previous_tail(

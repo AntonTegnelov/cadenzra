@@ -48,6 +48,9 @@ class MaterialInstruction(BaseModel, frozen=True):
     prescribed_lily: str | None = None
     # The bars the prescription occupies, for the patch permission model.
     prescribed_bars: tuple[int, ...] = ()
+    # How much of the final prescribed bar is left for the composer to
+    # write, when the entry ends mid-bar. None when every bar is complete.
+    open_remainder: Fraction | None = None
     # Tonal answers may adjust this many notes by a step; 0 elsewhere.
     max_adjustable: int = 0
 

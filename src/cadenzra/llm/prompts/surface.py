@@ -13,6 +13,7 @@ logic, is a review flag.
 
 from fractions import Fraction
 
+from cadenzra.llm.parsers.durations import duration_token
 from cadenzra.model.contexts import MaterialInstruction
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
@@ -132,6 +133,25 @@ def material_text(
     return "\n".join(lines)
 
 
+def open_bar_completion(instruction: MaterialInstruction) -> str:
+    """What finishing the open final bar takes, with the arithmetic done.
+
+    "Complete that bar" without the amount left a live cello overfilling
+    its open bar on its final attempt (c'2. g2 in 4/4). The remainder is
+    determined by the prescription and the meter, so it is handed over
+    (docs/08 principle 2), with a single duration token where one fits.
+    """
+    remainder = instruction.open_remainder
+    assert remainder is not None  # callers gate on an open prescription
+    token = duration_token(remainder)
+    example = f" (a {token})" if token else ""
+    return (
+        f"finish that bar with notes of your own summing to exactly "
+        f"{remainder} of a whole note{example}, continuing from the "
+        "prescribed notes at their written octave"
+    )
+
+
 def _prescribed_text(instruction: MaterialInstruction) -> str:
     """The entry as finished bars, ready to copy.
 
@@ -152,9 +172,14 @@ def _prescribed_text(instruction: MaterialInstruction) -> str:
     lines.append(
         "Copy it token for token — its pitches, durations, ties and barlines "
         "are already in your range and this section's meter, and the entry is "
-        "checked against them. Complete the final bar if it is left open, and "
-        "continue the line around the entry."
+        "checked against them. Continue the line around the entry."
     )
+    if instruction.open_remainder is not None:
+        lines.append(
+            "Its final bar is prescribed only up to the last note shown: "
+            + open_bar_completion(instruction)
+            + "."
+        )
     if instruction.max_adjustable:
         lines.append(
             "This is the answer at the fifth, in your octave. If the key "

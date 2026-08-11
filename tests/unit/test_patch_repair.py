@@ -768,7 +768,12 @@ def test_an_open_prescription_is_decorated_as_a_beginning_not_a_whole(
     (decorated,) = ctx.feedback
     assert "write it exactly as" not in decorated.message
     assert "begin it exactly with" in decorated.message
-    assert "complete" in decorated.message
+    assert "exactly 5/8" in decorated.message, (
+        "the prescription fills 1/4 of the 7/8 bar, so 5/8 remains — "
+        "'complete that bar' without the amount left a live cello "
+        "overfilling its open bar on its last attempt (round 8: c'2. g2 "
+        "in 4/4); the remainder is arithmetic, so it is handed over"
+    )
 
 
 def test_a_sweep_repair_yields_the_original_part_not_a_failed_patch(
