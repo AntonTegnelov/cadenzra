@@ -66,7 +66,10 @@ class RetryBudgets(BaseSettings):
     lyric_plan: int = 3
     lyric: int = 6
     voice: int = 6
-    section: int = 3
+    # Cross-voice sweeps shrink monotonically when they are working (95 ->
+    # 60 -> 47 live) and the convergence guard stops the ones that are not;
+    # the budget exists for runaway loops, not to cut converging ones short.
+    section: int = 8
     score: int = 3
     critique: int = 1
     interpretation: int = 2

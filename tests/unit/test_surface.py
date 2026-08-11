@@ -685,3 +685,22 @@ def test_a_cross_voice_repair_is_shown_the_lines_it_must_fit_against() -> None:
     assert "c4 d4 e4 f4 |" in repairing
     assert "viola" in repairing
     assert "yours is the line that moves" in repairing
+
+
+def test_a_forbidding_style_tells_the_voice_to_avoid_parallels_up_front() -> None:
+    """A double-fugue's first pass wrote 95 cross-voice violations, then
+    repaired them thirty at a time — nothing had ever told the voice the one
+    rule the checker enforces. The sentence appears only when siblings are
+    shown and the style forbids parallels: mentioning a rule a style waives
+    is an invitation to obey it anyway (docs/04)."""
+    forbidding = build_voice_prompt(_ctx(siblings={"viola": "c4 d4 e4 f4 |"}))
+    waived = build_voice_prompt(
+        _ctx(
+            siblings={"viola": "c4 d4 e4 f4 |"},
+            style=STYLE.model_copy(update={"parallel_fifths_policy": "allow"}),
+        )
+    )
+
+    assert "parallel fifths" in forbidding
+    assert "contrary or oblique motion" in forbidding
+    assert "parallel fifths" not in waived

@@ -140,10 +140,21 @@ def _siblings_block(ctx: VoiceContext) -> str:
         f"  {voice_id}:\n    " + music.replace("\n", "\n    ")
         for voice_id, music in ctx.siblings.items()
     )
-    return (
+    block = (
         "The other voices in this section, which yours has to fit against — "
         "these are fixed, so yours is the line that moves:\n" + lines
     )
+    if ctx.style.parallel_fifths_policy == "forbid":
+        # The one rule the cross-voice checker enforces, stated where the
+        # other lines are visible: a first pass never told it wrote 95
+        # violations to be repaired thirty at a time.
+        block += (
+            "\nAvoid parallel fifths and octaves against these lines: where "
+            "your line and theirs land a fifth or an octave apart, approach "
+            "it by contrary or oblique motion, never with both lines moving "
+            "the same way."
+        )
+    return block
 
 
 def _meter_clauses(ctx: VoiceContext) -> str:
