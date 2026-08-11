@@ -172,3 +172,30 @@ def test_a_free_line_doubling_a_future_prescribed_entry_is_caught_early(
     )
     viola = state.voices[voice_key("A", "viola")]
     assert "e'4 g'4 c'4 a4" in viola.lily_music
+
+
+def test_stubborn_cross_voice_faults_defer_to_the_sweep_not_kill_the_run(
+    tmp_path: Path,
+) -> None:
+    """Round 10, live: the cello — last voice in, three siblings fixed — hit
+    its budget on parallels that moved to fresh bars each attempt, and the
+    run died at the voice layer. The sweep is the authority on cross-voice
+    repair (bigger budget, alternating router, siblings reopened), so a
+    solo-clean part with only cross-voice faults left is accepted here and
+    the sweep inherits them; the run must not die at this layer."""
+    generator = ScriptedGenerator([VIOLA_LINE, ALTO_DOUBLING])
+    services = ComposeServices(
+        generator=generator,
+        renderer=LilypondAdapter(),
+        workdir=tmp_path,
+        budgets=RetryBudgets(voice=1),
+        synthesizer=None,  # type: ignore[arg-type]
+        output_dir=tmp_path,
+    )
+
+    state = generate_voices(_state(), services)
+
+    alto = state.voices[voice_key("A", "alto")]
+    assert alto.lily_music == ALTO_DOUBLING, (
+        "the solo-clean part stands; its parallels are the sweep's to repair"
+    )

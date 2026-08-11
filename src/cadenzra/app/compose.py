@@ -611,6 +611,7 @@ def _voice_to_convergence(
     # durations did not even parse (aes34), and the assembled score died on
     # it terminally.
     standing = rejected
+    deferrable: VoicePart | None = None
     patch_attempts = 0
     offered: set[int] = set()  # bars ever offered against the current part text
     parser_note: list[FeedbackItem] = []  # a rejected patch's own diagnosis
@@ -751,6 +752,11 @@ def _voice_to_convergence(
                 section,
                 materials,
             )
+            if feedback:
+                # Solo-clean, only cross-voice faults open: the best part
+                # this loop can fall back to if those faults outlast the
+                # budget.
+                deferrable = part
         for item in feedback:
             history.setdefault(item.fingerprint(), item)
         if not feedback:
@@ -798,6 +804,23 @@ def _voice_to_convergence(
                 items=feedback_dicts(feedback, {section.section_id: section.meter}),
             )
 
+    if deferrable is not None:
+        # The part passes every solo check; what remains are cross-voice
+        # faults against lines this loop must hold fixed. The section sweep
+        # owns those anyway — it re-derives them from the assembled score,
+        # has its own budget, and can move the siblings (its alternating
+        # router exists for exactly the whack-a-mole regime a last voice
+        # against three fixed lines falls into: six live attempts, different
+        # collisions each). Deferring hides nothing — the piece cannot
+        # complete while the faults remain.
+        _log.warning(
+            "%s in section %s is solo-clean after %d attempts; deferring its "
+            "remaining cross-voice faults to the section sweep",
+            voice_id,
+            section.section_id,
+            services.budgets.voice,
+        )
+        return deferrable
     raise BudgetExhaustedError(
         f"the {voice_id} part for section {section.section_id} still fails after "
         f"{services.budgets.voice} attempts: "
