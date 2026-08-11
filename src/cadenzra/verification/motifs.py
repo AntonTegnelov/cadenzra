@@ -348,13 +348,14 @@ def _check_range_under_relations(
 def _realized_pitches(
     events: list[NoteEvent], relation: Relation
 ) -> list[int] | None:
-    """The entry's sounding pitches under the relation, or None (tonal
-    answers approximate as the literal fifth-up answer — adjustments move
-    single notes by a step, which whole-octave fit is insensitive to)."""
+    """The entry's sounding pitches under the relation, or None.
+
+    `predicted_entry` realizes tonal answers as the literal fifth-up answer;
+    the adjust-license moves single notes by a step, which whole-octave fit
+    is insensitive to.
+    """
     if not events:
         return None
-    if relation.kind == "tonal answer":
-        return [event.midi_pitch + 7 for event in events]
     predicted = predicted_entry(events, relation.kind, relation.semitones)
     if predicted is None:
         return None

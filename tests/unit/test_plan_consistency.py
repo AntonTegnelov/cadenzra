@@ -106,19 +106,25 @@ def test_a_transposed_entry_is_checked_at_its_sounding_pitch() -> None:
     assert len(clashes) == 1
 
 
-def test_a_tonal_answer_is_left_to_the_downstream_check() -> None:
-    """A tonal answer adjusts a degree non-deterministically; predicting it
-    here would guess. The realized-entry check downstream still covers it."""
+def test_a_tonal_answer_is_pinned_at_the_literal_fifth() -> None:
+    """The prescription hands a tonal answer over as the literal real answer
+    — the subject a fifth up — so the grid must fit that realization. When
+    tonal answers were skipped here, the double-fugue's violin1 copied its
+    prescribed whole-note answer perfectly and met a chord the plan-time
+    check had never tested, after the section's one regrid was spent."""
     entry = MaterialEntry(
         motif_id="subject1", voice_id="viola", bar=1, relation="tonal answer"
     )
 
-    assert (
-        check_entries_against_grid(
-            _skeleton("G7", "G7", "G7", "G7"), _section(entry), {"subject1": SUBJECT}
-        )
-        == []
+    fits = check_entries_against_grid(
+        _skeleton("Gm", "Gm", "Gm", "Gm"), _section(entry), {"subject1": SUBJECT}
     )
+    clashes = check_entries_against_grid(
+        _skeleton("Gm", "Gm", "A", "Gm"), _section(entry), {"subject1": SUBJECT}
+    )
+
+    assert fits == []
+    assert len(clashes) == 1, "Eb+7 = Bb bites over A major, exactly like 'P5 up'"
 
 
 def test_a_passing_clash_is_not_flagged() -> None:

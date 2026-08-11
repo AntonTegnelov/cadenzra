@@ -160,10 +160,10 @@ def check_entries_against_grid(
     is a contradiction only the grid can resolve — detected downstream, it is
     an unfixable voice-level violation that once survived three repair sweeps
     (the double-fugue's immortal D#4). Deterministic, no LLM: predict each
-    deterministic entry's sounding pitches and apply exactly the held-tone
-    test the section check applies, so a pass here guarantees no unfixable
-    held-tone there. Tonal answers are skipped — predicting the adjusted
-    degree would be a guess, and the realized-entry check still covers them.
+    entry's sounding pitches and apply exactly the held-tone test the section
+    check applies, so a pass here guarantees no unfixable held-tone there.
+    Tonal answers are pinned at the literal fifth — that is what the
+    prescription hands the voice to copy.
     """
     strict = is_strict(dissonance_policy)
     feedback = []
@@ -218,18 +218,25 @@ def check_entries_against_grid(
 def predicted_entry(
     subject: list[NoteEvent], kind: str, semitones: int
 ) -> list[NoteEvent] | None:
-    """The entry's sounding notes, or None where prediction would guess."""
+    """The entry's sounding notes, as the prescription will realize them.
+
+    A tonal answer is the literal real answer — a fifth up — because that is
+    the text the voice is told to copy; the adjust-a-few-notes license can
+    shift a passing degree, and the regrid path still covers that rare case.
+    """
     if kind == "exact":
         return subject
     if kind == "transposition":
         return transpose_semitones(subject, semitones)
+    if kind == "tonal answer":
+        return transpose_semitones(subject, 7)
     if kind == "inversion":
         first = subject[0].midi_pitch
         return [
             note.model_copy(update={"midi_pitch": 2 * first - note.midi_pitch})
             for note in subject
         ]
-    return None  # tonal answer
+    return None
 
 
 def _item(
