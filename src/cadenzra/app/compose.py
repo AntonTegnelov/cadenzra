@@ -1205,14 +1205,15 @@ def assemble_and_verify(
             }
             continue
 
-        # Sweeps are stochastic, so one regression is not a verdict — a live
-        # loop went 65 → 53 → 60 and was killed while trending down. But a
-        # loop with no new best in two consecutive sweeps is proving the
-        # same thing twice (measured: 263 → 63 → 66, thirteen minutes of
-        # sweep three re-establishing sweep two), and goes loud.
+        # Sweeps are stochastic, so regressions are not verdicts — live
+        # loops went 65 → 53 → 60 and 47 → 24 → 14 → 7 → 13 → 7, killed
+        # while descending through noise of about five faults a sweep. A
+        # loop with no new best in three consecutive sweeps is proving the
+        # same thing over and over (measured: 263 → 63 → 66), and goes
+        # loud; the section budget bounds the patient case.
         distinct = len({item.fingerprint() for item in feedback})
         trajectory.append(distinct)
-        if len(trajectory) >= 3 and min(trajectory[-2:]) >= min(trajectory[:-2]):
+        if len(trajectory) >= 4 and min(trajectory[-3:]) >= min(trajectory[:-3]):
             path = " -> ".join(str(count) for count in trajectory)
             raise BudgetExhaustedError(
                 f"the cross-voice checks stopped converging: distinct "
