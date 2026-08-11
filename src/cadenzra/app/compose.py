@@ -1212,6 +1212,13 @@ def assemble_and_verify(
                 attempts=attempt,
             )
 
+        if attempt % 2 == 0:
+            # A fixed anchor means a mover that cannot clear a fault retries
+            # it forever while its partner never gets a turn (a live loop
+            # died at 2 -> 2 with both faults routed to the same voice every
+            # sweep). Alternate sweeps hand both-free faults to the other
+            # free voice.
+            feedback = _swap_both_free(feedback)
         targets = _targets_of(feedback)
         _log.warning(
             "cross-voice checks failed on attempt %d/%d: %s",
@@ -1327,6 +1334,27 @@ def _regrid(
             )
         state = regenerate_section_harmony(state, services, section_id, prior)
     return state
+
+
+def _swap_both_free(feedback: list[FeedbackItem]) -> list[FeedbackItem]:
+    """Both-free faults rerouted to the pair's other voice.
+
+    Pure scheduling: which of two equally-free voices moves this sweep. The
+    validator's deterministic pick stays the default; the section loop flips
+    it on alternate sweeps so a stuck fault gets a different mover.
+    """
+    swapped = []
+    for item in feedback:
+        if (
+            item.routing == "both-free"
+            and item.voice_id is not None
+            and len(item.voices) == 2
+        ):
+            other = next(v for v in item.voices if v != item.voice_id)
+            swapped.append(item.model_copy(update={"voice_id": other}))
+        else:
+            swapped.append(item)
+    return swapped
 
 
 def _raise_unfixable(

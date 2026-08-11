@@ -304,6 +304,34 @@ def test_a_malformed_artifact_is_a_rejection_not_the_end_of_the_run() -> None:
     assert "bar 0" in seen[1][0]
 
 
+def test_alternate_sweeps_hand_a_both_free_fault_to_the_other_voice() -> None:
+    """A live loop ground 73 -> 25 -> ... -> 2 -> 2 and died with the same
+    two faults routed to the same voice every sweep — the fixed anchor means
+    a mover that cannot clear a fault retries it forever while its partner
+    never gets a turn. On alternate sweeps the other free voice moves; a
+    fault with only one free voice keeps its only possible target."""
+    from cadenzra.app.compose import _swap_both_free
+
+    both_free = FeedbackItem(
+        source="validate_section",
+        level="section",
+        section_id="A",
+        voice_id="soprano",
+        kind="parallels",
+        voices=("bass", "soprano"),
+        routing="both-free",
+        message="bass and soprano move in parallel fifths into bar 2, beat 1",
+    )
+    pinned_side = both_free.model_copy(
+        update={"voice_id": "bass", "routing": "only-free-voice"}
+    )
+
+    swapped = _swap_both_free([both_free, pinned_side])
+
+    assert swapped[0].voice_id == "bass", "the other free voice takes a turn"
+    assert swapped[1].voice_id == "bass", "a single-target item never swaps"
+
+
 def test_a_voice_that_cannot_converge_yields_back_to_the_sweep(
     tmp_path: Path,
 ) -> None:
