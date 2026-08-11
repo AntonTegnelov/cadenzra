@@ -94,9 +94,10 @@ def test_default_budgets_absorb_the_weak_tier() -> None:
         "a fugue exposition's grid converged 3 -> 4 -> 1 complaints and died "
         "one attempt short of done at the old default of 3"
     )
-    assert budgets.section == 12, (
+    assert budgets.section == 16, (
         "cross-voice sweeps converged 73 -> 25 -> 14 -> 7 -> 4 -> 4 -> 2 -> 2 "
-        "and were killed by the old budget of 8 two sweeps from done; the "
-        "plateau guard, not the budget, is what stops a sweep that stopped "
-        "working"
+        "and were killed by the old budget of 8 two sweeps from done; a later "
+        "run descended 61 -> ... -> 11 -> 10 monotone and was killed at 12. "
+        "The plateau guard, not the budget, is what stops a sweep that "
+        "stopped working"
     )

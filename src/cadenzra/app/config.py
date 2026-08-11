@@ -76,8 +76,10 @@ class RetryBudgets(BaseSettings):
     # Cross-voice sweeps shrink monotonically when they are working (73 ->
     # 25 -> 14 -> 7 -> 4 -> 4 -> 2 -> 2 live, killed two sweeps from done)
     # and the convergence guard stops the ones that are not; the budget
-    # exists for runaway loops, not to cut converging ones short.
-    section: int = 12
+    # exists for runaway loops, not to cut converging ones short. It did
+    # exactly that at 12: a live sweep descended 61 -> ... -> 11 -> 10,
+    # monotone all twelve attempts, guard never fired, budget exhausted.
+    section: int = 16
     score: int = 3
     # One listen to find a problem, one to confirm the knob fixed it. This
     # budget bounds the critic invocations themselves — the loop count is
