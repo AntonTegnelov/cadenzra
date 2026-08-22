@@ -91,3 +91,19 @@ def test_the_tail_is_bounded_by_the_budget_not_the_guard() -> None:
     assert not sweep_plateaued([54, 30, 20, 13, 9, 6, 7, 8, 8]), (
         "the live tail that stalled at 6-8 with three sweeps of budget left"
     )
+
+
+def test_a_byte_identical_fault_set_ends_the_sweep_regardless_of_the_floor() -> None:
+    """Orchestra, live: one held F#4 drew the same ges' respelling patch
+    sixteen sweeps in a row — under the noise floor the whole time, so the
+    count-based guard never fired and the budget paid for every sweep. A
+    fault set identical three sweeps running has zero movement; identity,
+    not count, is the signal counts cannot see."""
+    from cadenzra.app.compose import sweep_frozen
+
+    moving = [frozenset({"a", "b"}), frozenset({"a"}), frozenset({"a"})]
+    assert not sweep_frozen(moving), "two identical sets is noise, not proof"
+    assert sweep_frozen(moving + [frozenset({"a"})])
+    assert not sweep_frozen(
+        [frozenset({"a"}), frozenset({"b"}), frozenset({"a"})]
+    ), "alternating sets are still moving"

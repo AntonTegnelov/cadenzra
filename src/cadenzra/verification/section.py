@@ -193,7 +193,19 @@ def _step_resolution(
     named = " or ".join(
         f"{step.to_scientific()} ({step.to_lilypond()})" for step in steps[:2]
     )
-    return f" — a step to {named} lands on the chord"
+    # The check hears MIDI: told "a step to F4 or G4", a live model patched
+    # its held F#4 to ges' — the same sounding note — sixteen byte-identical
+    # sweeps running. Where the pitch has two names, both are declared one.
+    alt = Pitch.from_midi_number(
+        pitch.midi_number, prefer_flats=not prefer_flats(section.key)
+    )
+    respell = ""
+    if alt.to_lilypond() != pitch.to_lilypond():
+        respell = (
+            f" ({pitch.to_lilypond()} and {alt.to_lilypond()} are the same "
+            "sounding note — respelling it is not a resolution)"
+        )
+    return f" — a step to {named} lands on the chord{respell}"
 
 
 def _prescribed(

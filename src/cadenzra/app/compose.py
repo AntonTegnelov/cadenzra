@@ -1361,6 +1361,7 @@ def assemble_and_verify(
     reason validation is scoped this way.
     """
     trajectory: list[int] = []
+    fault_sets: list[frozenset[str]] = []
     regridded: set[SectionId] = set()
     for attempt in range(1, services.budgets.section + 1):
         state = assemble(state, services)
@@ -1390,9 +1391,10 @@ def assemble_and_verify(
             }
             continue
 
-        distinct = len({item.fingerprint() for item in feedback})
-        trajectory.append(distinct)
-        if sweep_plateaued(trajectory):
+        fingerprints = {item.fingerprint() for item in feedback}
+        trajectory.append(len(fingerprints))
+        fault_sets.append(frozenset(fingerprints))
+        if sweep_plateaued(trajectory) or sweep_frozen(fault_sets):
             path = " -> ".join(str(count) for count in trajectory)
             raise BudgetExhaustedError(
                 f"the cross-voice checks stopped converging: distinct "
@@ -1540,6 +1542,19 @@ def _regrid(
 # 3; live runs then stalled at 6-8 with budget left). The stuck regime's
 # counts sit far above this, so the guard still ends those.
 _SWEEP_NOISE_FLOOR = 8
+
+
+def sweep_frozen(histories: list[frozenset[str]]) -> bool:
+    """Whether the fault set itself has stopped moving at all.
+
+    The noise-floor exemption in `sweep_plateaued` assumes a handful of
+    faults is one lucky repair from done — but a set that is *byte-identical*
+    three sweeps running has zero movement, luck included. Live: one held
+    F#4 drew the same ges' respelling patch sixteen sweeps in a row, under
+    the floor the whole time, and the budget paid for every one. Identity
+    of fingerprints, not count, is the stuckness signal counts cannot see.
+    """
+    return len(histories) >= 3 and histories[-1] == histories[-2] == histories[-3]
 
 
 def sweep_plateaued(trajectory: list[int]) -> bool:

@@ -627,3 +627,21 @@ def test_a_collision_only_the_fixed_sibling_could_fix_is_left_to_the_sweep() -> 
         "soprano's colliding bars are prescribed and bass is free: only "
         "bass can move, and it is already accepted"
     )
+
+
+def test_a_held_black_key_is_warned_against_enharmonic_respelling() -> None:
+    """Orchestra, live: told 'a step to F4 or G4 lands on the chord', the
+    model patched its held F#4 to ges' — the same sounding note — sixteen
+    byte-identical sweeps running. The check hears MIDI, and the message
+    must say the respelling is not a resolution."""
+    voices = _voices(soprano=[66, 66, 66, 66])  # F#4 held across Eb major
+
+    feedback = validate_section(
+        voices, _section(key="c minor"), _skeleton("Eb", "Eb", "Eb", "Eb"), _style()
+    )
+
+    held = [item for item in feedback if item.kind == "held_tone"]
+    assert held, "a sustained non-chord tone must be flagged"
+    assert "same sounding note" in held[0].message, (
+        "fis and ges must be named as one pitch, or the model respells forever"
+    )
