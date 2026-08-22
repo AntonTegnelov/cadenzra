@@ -75,14 +75,20 @@ def _check_order_and_gaps(
             # change only flagged chords — live, a grid missing one beat
             # came back verbatim six times. The gap names its own edit.
             beat = section.meter.bar_length / section.meter.units_per_bar
-            beats = (event.offset - cursor) / beat
-            count = f"{beats} beat{'' if beats == 1 else 's'}"
-            fix = (
-                f"; extend the {previous.chord} at "
-                f"{format_bar_beat(previous.offset, section.meter)} by {count}"
-                if previous is not None
-                else "; start the first chord at bar 1, beat 1"
-            )
+            if previous is not None:
+                # Absolute target, not a relative "extend by N": told to
+                # extend by 1 beat, a live model answered its old duration
+                # five identical times — it may well believe the old value
+                # already is the extended one. Both numbers close the door.
+                target = (event.offset - previous.offset) / beat
+                has = (cursor - previous.offset) / beat
+                fix = (
+                    f"; give the {previous.chord} at "
+                    f"{format_bar_beat(previous.offset, section.meter)} a "
+                    f"duration of {target} beats (it has {has})"
+                )
+            else:
+                fix = "; start the first chord at bar 1, beat 1"
             feedback.append(
                 _item(
                     section,

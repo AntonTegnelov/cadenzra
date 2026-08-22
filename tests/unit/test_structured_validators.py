@@ -540,7 +540,7 @@ def test_a_gap_in_the_progression_is_rejected_and_located() -> None:
     assert any("gapless" in item.message for item in feedback)
     assert any("bar 1, beat 5" in item.message for item in feedback)
     gap = next(item for item in feedback if "gapless" in item.message)
-    assert "extend the Dm at bar 1, beat 1 by 3 beats" in gap.message, (
+    assert "give the Dm at bar 1, beat 1 a duration of 7 beats (it has 4)" in gap.message, (
         "metal, live: 'the progression must be gapless' flags no chord, and "
         "the amendment prompt says change only flagged chords — the model "
         "kept its grid verbatim six times; the gap must name its own edit"
