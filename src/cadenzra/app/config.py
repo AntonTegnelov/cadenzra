@@ -72,7 +72,11 @@ class RetryBudgets(BaseSettings):
     harmony: int = 6
     lyric_plan: int = 3
     lyric: int = 6
-    voice: int = 6
+    # Two live loops died exactly one fault short at 6, both visibly
+    # converging (two broken bars -> one) - the budget exists for runaway
+    # loops, not to cut converging ones short, the same lesson the section
+    # budget learned at 12.
+    voice: int = 8
     # Cross-voice sweeps shrink monotonically when they are working (73 ->
     # 25 -> 14 -> 7 -> 4 -> 4 -> 2 -> 2 live, killed two sweeps from done)
     # and the convergence guard stops the ones that are not; the budget

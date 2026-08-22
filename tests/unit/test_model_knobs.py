@@ -88,7 +88,10 @@ def test_default_budgets_absorb_the_weak_tier() -> None:
         "live loop went 3 -> 4 -> 1 items and died one attempt from clean"
     )
     assert budgets.motifs == 8
-    assert budgets.voice == 6
+    assert budgets.voice == 8, (
+        "two live loops died one fault short at 6, both converging - the "
+        "budget must not cut a converging loop short"
+    )
     assert budgets.lyric == 6
     assert budgets.harmony == 6, (
         "a fugue exposition's grid converged 3 -> 4 -> 1 complaints and died "
