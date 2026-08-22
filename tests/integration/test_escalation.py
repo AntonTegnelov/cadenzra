@@ -240,11 +240,11 @@ def test_a_regrid_that_cannot_satisfy_the_entry_still_goes_loud(
 
 
 def test_a_stalled_repair_loop_stops_at_the_plateau(tmp_path: Path) -> None:
-    """A single immortal fault sits below the guard's noise floor — at the
-    last few faults sweeps are cheap and Binomial noise dominates any
-    trend (the simulation measured the trend guard killing 13% of
-    converging loops there), so the section budget is the honest bound:
-    the loop spends it and goes loud with the trajectory in hand."""
+    """A single immortal fault sits below the count guard's noise floor,
+    but its fault set is byte-identical sweep after sweep — the frozen-set
+    guard ends it after three sweeps instead of letting the budget pay for
+    sixteen (live: one held F#4 drew the same ges' respelling patch every
+    sweep, under the floor the whole time)."""
     from tests.fakes.generator import ScriptedGenerator
 
     free_section = SECTION.model_copy(update={"material": []})
@@ -293,12 +293,12 @@ def test_a_stalled_repair_loop_stops_at_the_plateau(tmp_path: Path) -> None:
         output_dir=tmp_path,
     )
 
-    with pytest.raises(BudgetExhaustedError, match="still fails") as caught:
+    with pytest.raises(BudgetExhaustedError, match="stopped converging") as caught:
         assemble_and_verify(state, services)
 
-    assert caught.value.attempts == RetryBudgets().section
+    assert caught.value.attempts == 3, "identical sets three sweeps running"
     repairs = generator.calls + len(generator.patch_contexts)
-    assert repairs <= 2 * RetryBudgets().section, "cheap tail sweeps, bounded"
+    assert repairs <= 6, "the frozen-set guard spares the rest of the budget"
 
 
 def test_the_last_repair_is_verified_before_the_run_dies(tmp_path: Path) -> None:
