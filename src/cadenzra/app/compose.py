@@ -492,6 +492,56 @@ def _splice_prescriptions(
     )
 
 
+def _open_prefix_faults(
+    part: VoicePart,
+    materials: list[MaterialInstruction],
+    section: SectionPlan,
+) -> list[FeedbackItem]:
+    """The open bar of a prescription must begin with its prescribed tokens.
+
+    A token comparison, not a parser — the prefix is our own rebar output.
+    The interval check catches a drifted copy three sweeps late and teaches
+    in semitones; this catches it at once and teaches in the tokens
+    themselves — live, a patch copied "d8 a8" as "d,8 a,8" three times
+    against a semitone-arithmetic message.
+    """
+    faults = []
+    for instruction in materials:
+        text = instruction.prescribed_lily
+        if text is None or instruction.open_remainder is None:
+            continue
+        prefix = (
+            text[text.rindex("|") + 1 :] if "|" in text else text
+        ).split()
+        open_bar = instruction.prescribed_bars[-1]
+        bars = split_bars(part.lily_music)
+        if not prefix or open_bar > len(bars):
+            continue  # the bar-count check owns a short part
+        written = [
+            token
+            for token in bars[open_bar - 1].split()
+            if not token.startswith("\\")
+        ]
+        if written[: len(prefix)] != prefix:
+            begins = " ".join(written[: len(prefix)])
+            faults.append(
+                FeedbackItem(
+                    source="validate_voice",
+                    level="voice",
+                    section_id=section.section_id,
+                    voice_id=part.voice_id,
+                    location=offset_of(open_bar, 1, section.meter),
+                    message=(
+                        f"bar {open_bar} must begin with exactly these "
+                        f"notes: {' '.join(prefix)} — it begins: {begins}; "
+                        "copy the prescribed tokens verbatim, then complete "
+                        "the bar"
+                    ),
+                )
+            )
+    return faults
+
+
 def _entry_aware(
     feedback: list[FeedbackItem],
     section: SectionPlan,
@@ -746,7 +796,8 @@ def _voice_to_convergence(
                 section,
                 services.renderer,
                 services.workdir / f"{section.section_id}-{voice_id}-{cycle}",
-            ),
+            )
+            + _open_prefix_faults(part, materials, section),
             section,
             materials,
         )

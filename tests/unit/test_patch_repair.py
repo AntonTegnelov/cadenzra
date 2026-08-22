@@ -1001,3 +1001,38 @@ def test_malformed_patches_spend_strikes_not_the_attempt_budget(
         "two malformed patches must not exhaust a budget of two: the third "
         "patch call still had its attempt to spend"
     )
+
+
+def test_the_open_bar_must_begin_with_its_prescribed_tokens_verbatim() -> None:
+    """Game-score, live: told 'begin it exactly with: d8 a8 d8 a8 f8 g8 a8',
+    the model wrote d,8 a,8 d8 ... — octave slips the interval check catches
+    three sweeps late and teaches in semitones. The token comparison catches
+    the drifted copy at once and teaches in the tokens themselves."""
+    from fractions import Fraction as F
+
+    from cadenzra.app.compose import _open_prefix_faults
+    from cadenzra.model.contexts import MaterialInstruction
+    from cadenzra.model.motif import Motif
+
+    instruction = MaterialInstruction(
+        motif=Motif(motif_id="m", role="riff", lily_music="d8 a8 d8 a8 f8 g8 a8 |"),
+        entry=MaterialEntry(motif_id="m", voice_id="cello", bar=1, relation="exact"),
+        prescribed_lily="d8 a8 d8 a8 f8 g8 a8",
+        prescribed_bars=(1,),
+        open_remainder=F(1, 8),
+    )
+    section = _loop_section().model_copy(update={"bars": 1, "meter": FOUR_FOUR})
+
+    drifted = VoicePart(
+        section_id="A", voice_id="cello",
+        lily_music="\\f d,8 a,8 d8 a8 f8 g8 a8 a8 |",
+    )
+    (fault,) = _open_prefix_faults(drifted, [instruction], section)
+    assert "must begin with exactly these notes: d8 a8 d8 a8 f8 g8 a8" in fault.message
+    assert "it begins: d,8 a,8" in fault.message
+
+    faithful = VoicePart(
+        section_id="A", voice_id="cello",
+        lily_music="\\f d8 a8 d8 a8 f8 g8 a8 a8 |",
+    )
+    assert _open_prefix_faults(faithful, [instruction], section) == []
