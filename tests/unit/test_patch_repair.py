@@ -963,3 +963,41 @@ def test_the_open_final_bar_of_a_prescription_is_patchable() -> None:
     assert _protected_bars([instruction], _loop_state(_loop_section())) == {1}, (
         "the complete bar is pinned; the open bar is the model's to repair"
     )
+
+
+def test_malformed_patches_spend_strikes_not_the_attempt_budget(
+    tmp_path: Path,
+) -> None:
+    """Game-score, live: three malformed patches burned half the voice
+    budget without the music ever changing, and the loop died one bar
+    short. The malformed tail is already bounded by the strike counter
+    (one free retry, then strikes to the rewrite fallback), so charging
+    the attempt budget too is double-counting that starves real repairs.
+    A full-generation parse failure still costs its attempt — nothing
+    else bounds it."""
+
+    class _MalformedTwice(ScriptedGenerator):
+        failures = 0
+
+        def patch_voice(self, ctx: PatchContext) -> dict[int, str]:
+            if self.failures < 2:
+                self.failures += 1
+                self.patch_contexts.append(ctx)
+                raise LLMOutputError("declares durations summing to 9/8")
+            return super().patch_voice(ctx)
+
+    generator = _MalformedTwice(patches=[{1: GOOD}])
+    renderer = RecordingRenderer([clean()])
+    services = _loop_services(
+        generator, renderer, tmp_path, budgets=RetryBudgets(voice=2)
+    )
+    section = _loop_section()
+
+    part = _voice_to_convergence(
+        _loop_state(section), services, section, "alto", prior=[_bar_scoped_item()]
+    )
+
+    assert part.lily_music.strip() == GOOD, (
+        "two malformed patches must not exhaust a budget of two: the third "
+        "patch call still had its attempt to spend"
+    )

@@ -707,7 +707,10 @@ def _voice_to_convergence(
             # patch path, and a full rewrite of twenty bars is where fresh
             # cross-voice violations pour in.
             if patching:
-                attempt += 1
+                # No attempt is charged: the malformed tail is bounded by
+                # the strike counter below, and charging the budget too is
+                # double-counting — three malformed patches once burned
+                # half a live voice budget without the music ever changing.
                 # One malformed patch is a wasted call, not evidence that
                 # patching cannot fix this part (counting the first as a
                 # strike once funneled repairs into rewrites that poured in
