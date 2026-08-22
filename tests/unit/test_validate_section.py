@@ -405,6 +405,12 @@ def test_right_notes_with_wrong_rhythm_is_still_a_failed_entry() -> None:
 
     assert len(feedback) == 1
     assert "not its rhythm" in feedback[0].message
+    assert "first diverge at bar 1, beat 1" in feedback[0].message, (
+        "metal, live: two full duration lists with no location left the "
+        "model editing the wrong bar sixteen sweeps running — the first "
+        "divergent note is arithmetic, so it is named"
+    )
+    assert "should last 1/4 of a whole note, not 1/2" in feedback[0].message
 
 
 @pytest.mark.parametrize("relation", ["exact", "P5 up", "octave down", "inversion"])

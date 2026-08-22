@@ -35,6 +35,7 @@ from cadenzra.verification.transposition import (
     UnknownRelationError,
     intervals_match_under_relation,
     parse_relation,
+    rhythm_profile,
     rhythm_profile_matches,
 )
 
@@ -591,10 +592,37 @@ def _check_material_entries(
                         f"notes for {entry.motif_id} but not its rhythm: it needs the "
                         f"durations {_durations_text(subject)}, and has "
                         f"{_durations_text(candidate)}"
+                        + _rhythm_divergence(subject, candidate, section.meter)
                     ),
                 )
             )
     return feedback
+
+
+def _rhythm_divergence(
+    subject: list[NoteEvent], candidate: list[NoteEvent], meter: MeterSpec
+) -> str:
+    """Where the two rhythms first part ways, as a bar-and-beat edit.
+
+    Two full duration lists with no location left a live model editing the
+    wrong bar sixteen sweeps running; the first divergent note is
+    arithmetic, so it is named.
+    """
+    wanted, got = rhythm_profile(subject), rhythm_profile(candidate)
+    for index, (want, have) in enumerate(zip(wanted, got, strict=False)):
+        if not within_tolerance(want, have):
+            note = candidate[index]
+            return (
+                f" — they first diverge at "
+                f"{format_bar_beat(note.onset, meter)}: note {index + 1} "
+                f"should last {want} of a whole note, not {have}"
+            )
+    if len(wanted) != len(got):
+        return (
+            f" — the entry has {len(got)} notes where "
+            f"{len(wanted)} are needed"
+        )
+    return ""
 
 
 def _durations_text(notes: list[NoteEvent]) -> str:
