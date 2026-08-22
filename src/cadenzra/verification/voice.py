@@ -28,6 +28,7 @@ from cadenzra.model.spec import VoiceSpec
 from cadenzra.model.structure import SectionPlan
 from cadenzra.model.voice import VoicePart
 from cadenzra.notation.keys import prefer_flats
+from cadenzra.notation.rebar import rebar_events
 from cadenzra.notation.scaffold import (
     ScaffoldedSource,
     bar_of_fragment_position,
@@ -401,8 +402,12 @@ def _check_range(
     flood of eighty identical items teaches it nothing a summary would not.
     """
     offenders: dict[tuple[int, bool], list[Pitch]] = {}
+    bar_events: dict[int, list[NoteEvent]] = {}
     for notes in extract_voice_notes(mido.MidiFile(midi_path)).values():
         for note in notes:
+            bar_events.setdefault(
+                bar_containing(note.onset, section.meter), []
+            ).append(note)
             pitch = Pitch.from_midi_number(
                 note.midi_pitch, prefer_flats=prefer_flats(section.key)
             )
@@ -434,8 +439,62 @@ def _check_range(
                 f"the {'highest' if above else 'lowest'} "
                 f"{_both_spellings(extreme, section)}{remedy}"
             )
-        feedback.append(_item(part, section, bar=bar, message=message))
+        literal = _literal_bar(
+            bar_events.get(bar, []), bar, voice_spec, section
+        )
+        feedback.append(
+            _item(part, section, bar=bar, message=message + literal)
+        )
     return feedback
+
+
+def _literal_bar(
+    events: list[NoteEvent],
+    bar: int,
+    voice_spec: VoiceSpec,
+    section: SectionPlan,
+) -> str:
+    """The bar rewritten into range, whole and verbatim — or nothing.
+
+    A drop-tuning riff sat a semitone below the floor and the model refused
+    the octave lift six live attempts running, respelling ees, as dis,
+    sooner than raising it. The corrected bar is arithmetic on the compiled
+    notes, so it is handed over complete: out-of-range notes shifted by
+    whole octaves toward the range, rhythm intact. Silent when any shifted
+    note still misses, when a note crosses the barline, or when the rhythm
+    is unrepresentable (tuplets) — the octave-up sentence already given
+    stays the advice.
+    """
+    if not events:
+        return ""
+    start = offset_of(bar, 1, section.meter)
+    end = start + section.meter.bar_length
+    shifted = []
+    for note in sorted(events, key=lambda item: item.onset):
+        if note.onset < start - TICK_TOLERANCE or note.end > end + TICK_TOLERANCE:
+            return ""
+        pitch = note.midi_pitch
+        while pitch < voice_spec.range_low.midi_number:
+            pitch += 12
+        while pitch > voice_spec.range_high.midi_number:
+            pitch -= 12
+        if not (
+            voice_spec.range_low.midi_number
+            <= pitch
+            <= voice_spec.range_high.midi_number
+        ):
+            return ""
+        shifted.append(
+            note.model_copy(
+                update={"midi_pitch": pitch, "onset": note.onset - start}
+            )
+        )
+    text = rebar_events(
+        shifted, section.meter, prefer_flats=prefer_flats(section.key)
+    )
+    if text is None:
+        return ""
+    return f" — one way: write bar {bar} exactly as: {text.strip()}"
 
 
 def _both_spellings(pitch: Pitch, section: SectionPlan) -> str:

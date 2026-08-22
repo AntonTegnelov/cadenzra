@@ -380,3 +380,20 @@ def test_too_many_bars_is_told_to_remove_music_not_fix_barlines(
     counts = [item for item in feedback if "bars of music" in item.message]
     assert counts, [item.message for item in feedback]
     assert "remove 1 bar" in counts[0].message
+
+
+def test_a_range_fault_offers_the_corrected_bar_verbatim(
+    renderer: LilypondAdapter, tmp_path: Path
+) -> None:
+    """Metal, live: a drop-tuning riff sat a semitone below the floor and
+    the model refused the octave lift six attempts running — even
+    respelling ees, as dis, sooner than raising it. The corrected bar is
+    arithmetic on the compiled notes, so the message now hands it over
+    whole: notes shifted into range, rhythm intact."""
+    music = "a'4 a'4 a'4 a'4 |\nc4 c4 e4 c4 |"  # bar 2 sits below the G3 floor
+
+    feedback = _check(music, renderer, tmp_path, meter=FOUR_FOUR)
+
+    below = [item for item in feedback if "below" in item.message]
+    assert below, [item.message for item in feedback]
+    assert "write bar 2 exactly as: c'4 c'4 e'4 c'4 |" in below[0].message
