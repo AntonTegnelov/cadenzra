@@ -727,3 +727,29 @@ def test_a_rhythm_mismatch_is_located_at_the_divergence_not_the_entry_start() ->
     assert item.location == Fraction(5, 4), (
         "the divergence (note 6, bar 2 beat 2) is where a repair may act"
     )
+
+
+def test_a_note_ending_exactly_at_an_entry_boundary_is_free_music() -> None:
+    """Double-fugue, live: a held D ending exactly where the cello's bar-13
+    entry begins was marked 'prescribed', routed unfixable, sent to a regrid
+    that had nothing to fix, and killed the run on the second pass. Notes
+    and spans are half-open intervals: touching at the boundary is not
+    overlap."""
+    section = _section(
+        bars=2,
+        material=[
+            MaterialEntry(motif_id="m", voice_id="soprano", bar=2, relation="exact")
+        ],
+    )
+    # B held through bar 1 (ends exactly at bar 2), then the entry's notes.
+    voice = _voice_of([(71, 4), (60, 1), (62, 1), (64, 1), (65, 1)])
+    motif = _voices(m=[60, 62, 64, 65])["m"]
+
+    feedback = validate_section(
+        voice, section, _skeleton(*["C"] * 8), _style("allow"), {"m": motif}
+    )
+
+    held = [item for item in feedback if item.kind == "held_tone"]
+    assert held, "the clash is real"
+    assert held[0].voice_id == "soprano", "bar 1 is free music: the voice fixes it"
+    assert held[0].routing != "unfixable"

@@ -215,9 +215,15 @@ def _prescribed(
     start: Fraction,
     end: Fraction,
 ) -> bool:
-    """Whether [start, end] touches any of the voice's prescribed spans."""
+    """Whether [start, end) overlaps any of the voice's prescribed spans.
+
+    Strict on both boundaries: notes and spans are half-open intervals, and
+    a note ending exactly where an entry begins is free music — the closed
+    check marked one such note "prescribed", routed it unfixable, and sent
+    a run to its death through a regrid that had nothing to fix.
+    """
     return any(
-        span_start <= end and start < span_end
+        span_start < end and start < span_end
         for span_start, span_end in spans.get(voice_id, [])
     )
 
