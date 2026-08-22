@@ -365,3 +365,18 @@ def test_a_range_message_names_both_enharmonic_spellings(
     (item,) = feedback
     assert "dis" in item.message
     assert "ees" in item.message, "the spelling the part may actually use"
+
+
+def test_too_many_bars_is_told_to_remove_music_not_fix_barlines(
+    renderer: LilypondAdapter, tmp_path: Path
+) -> None:
+    """Orchestra, live: a 13-bar part in a 12-bar section drew 'write a |
+    at every barline' four attempts running — its barlines were fine; the
+    music was a bar too long. The over-count side names the real edit."""
+    music = "a'4 a'4 a'4 a'4 |\nb'4 b'4 b'4 b'4 |\nc''4 c''4 c''4 c''4 |"
+
+    feedback = _check(music, renderer, tmp_path, meter=FOUR_FOUR, bars=2)
+
+    counts = [item for item in feedback if "bars of music" in item.message]
+    assert counts, [item.message for item in feedback]
+    assert "remove 1 bar" in counts[0].message

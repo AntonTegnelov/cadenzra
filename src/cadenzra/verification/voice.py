@@ -198,18 +198,26 @@ def _check_bar_checks_present(
     found = count_bar_checks(part.lily_music)
     if found == section.bars:
         return []
-    return [
-        _item(
-            part,
-            section,
-            message=(
-                f"the part has {found} bar check{'' if found == 1 else 's'} but section "
-                f"{section.section_id} is {section.bars} bars long; write a | at every "
-                "barline so each bar can be checked against "
-                f"{section.meter.surface_string()}"
-            ),
+    if found > section.bars:
+        # "Write a | at every barline" misdiagnoses this side: the barlines
+        # are usually fine and the music is simply too long — a live part
+        # was told it four attempts running and rewrote thirteen bars four
+        # times. The extra bars are what must go.
+        extra = found - section.bars
+        advice = (
+            f"the part is {found} bars of music but section "
+            f"{section.section_id} is only {section.bars}; remove "
+            f"{extra} bar{'' if extra == 1 else 's'}, keeping every "
+            "remaining bar complete"
         )
-    ]
+    else:
+        advice = (
+            f"the part has {found} bar check{'' if found == 1 else 's'} but section "
+            f"{section.section_id} is {section.bars} bars long; write a | at every "
+            "barline so each bar can be checked against "
+            f"{section.meter.surface_string()}"
+        )
+    return [_item(part, section, message=advice)]
 
 
 def _check_bars_fill_the_meter(
