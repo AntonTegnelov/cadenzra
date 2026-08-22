@@ -24,7 +24,7 @@ from cadenzra.llm.prompts.surface import (
 from cadenzra.model.contexts import PinnedTone
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
-from cadenzra.model.motif import Motif
+from cadenzra.model.motif import Motif, MotifLibrary
 from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.primitives.pitch import Pitch
 from cadenzra.model.primitives.time import bar_beat_of
@@ -168,6 +168,8 @@ def build_motif_prompt(
     style: StylePack,
     plan: StructurePlan,
     feedback: list[FeedbackItem] | None = None,
+    *,
+    rejected: MotifLibrary | None = None,
 ) -> str:
     """Write the material every later entry derives from."""
     first = _carrying_section(briefs, plan)
@@ -247,6 +249,19 @@ def build_motif_prompt(
         "every note, a bar check | at the end of every bar, and no structural "
         "commands."
     )
+    if rejected is not None and rejected.motifs:
+        # A retry is an amendment, not a re-roll: a correct ostinato was
+        # regenerated into a broken one while its neighbour was being
+        # fixed, eight live attempts running.
+        shown = "\n".join(
+            f"  {motif_id}: {motif.lily_music}"
+            for motif_id, motif in sorted(rejected.motifs.items())
+        )
+        blocks.append(
+            "Your previous motifs are below. Keep every motif the rehearsal "
+            "notes do not complain about, exactly as written, and rewrite "
+            "only the ones they flag:\n" + shown
+        )
     notes = rehearsal_notes(feedback or [], what="material")
     if notes:
         blocks.append(notes)

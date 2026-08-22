@@ -179,16 +179,24 @@ def generate_motifs(state: PipelineState, services: LayerServices) -> PipelineSt
 
     _log.info("writing %d motifs", len(plan.materials_needed))
 
+    # A mutable cell, deliberately: `_converge` owns the loop, so the only
+    # channel for "the library the last attempt produced" is this closure —
+    # the same shape the harmony layer uses.
+    last: list[MotifLibrary] = []
+
     def generate(feedback: list[FeedbackItem]) -> MotifLibrary:
-        return services.generator.generate_motifs(
+        library = services.generator.generate_motifs(
             MotifContext(
                 briefs=plan.materials_needed,
                 spec=state.spec,
                 style=style,
                 plan=plan,
+                rejected=last[-1] if last else None,
                 feedback=feedback,
             )
         )
+        last.append(library)
+        return library
 
     def validate(library: MotifLibrary) -> list[FeedbackItem]:
         return validate_motifs(

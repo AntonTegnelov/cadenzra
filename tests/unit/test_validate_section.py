@@ -691,3 +691,39 @@ def test_a_held_tone_that_resolves_by_step_is_a_suspension_not_a_fault() -> None
     assert [i for i in feedback if i.kind == "held_tone"], (
         "a leap away explains nothing; the clash stays flagged"
     )
+
+
+def test_a_rhythm_mismatch_is_located_at_the_divergence_not_the_entry_start() -> None:
+    """Tool-choir, live: an entry's rhythm diverged in its open final bar,
+    but the item pointed at the entry's start — a complete prescribed bar
+    the patch permission model rightly protects — so the repair was offered
+    the one bar it may not touch and froze for three sweeps. The item's
+    location must be the divergence, which is the bar that may change."""
+    pitches = [60, 62, 64, 65, 67, 65, 64, 62]
+    two_bar_subject = _voices(m=pitches)["m"]
+    midi = mido.MidiFile(ticks_per_beat=TICKS)
+    track = mido.MidiTrack()
+    track.name = "staff:soprano"
+    midi.tracks.append(track)
+    for index, pitch in enumerate(pitches):
+        ticks = TICKS if index < 5 else TICKS // 2  # bar 2 rushes to eighths
+        track.append(mido.Message("note_on", channel=0, note=pitch, velocity=90, time=0))
+        track.append(mido.Message("note_off", channel=0, note=pitch, velocity=0, time=ticks))
+    diverged = extract_voice_notes(midi)["soprano"]
+    section = _section(
+        bars=2,
+        material=[
+            MaterialEntry(motif_id="m", voice_id="soprano", bar=1, relation="exact")
+        ],
+    )
+
+    feedback = validate_section(
+        {"soprano": list(diverged)}, section, NO_HARMONY, _style("allow"),
+        {"m": two_bar_subject},
+    )
+
+    (item,) = [i for i in feedback if "not its rhythm" in i.message]
+    assert "bar 2" in item.message
+    assert item.location == Fraction(5, 4), (
+        "the divergence (note 6, bar 2 beat 2) is where a repair may act"
+    )

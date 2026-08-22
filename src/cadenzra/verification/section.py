@@ -627,7 +627,12 @@ def _check_material_entries(
                     voice_id=entry.voice_id,
                     kind="entry",
                     voices=(entry.voice_id,),
-                    location=start,
+                    # Located at the divergence, not the entry start: the
+                    # start is usually a complete prescribed bar the patch
+                    # permission model rightly protects, and a repair
+                    # offered only that bar froze for three live sweeps
+                    # while the real fault sat in the open bar.
+                    location=_rhythm_divergence_onset(subject, candidate, start),
                     message=(
                         f"the {entry.voice_id} entry at bar {entry.bar} has the right "
                         f"notes for {entry.motif_id} but not its rhythm: it needs the "
@@ -638,6 +643,17 @@ def _check_material_entries(
                 )
             )
     return feedback
+
+
+def _rhythm_divergence_onset(
+    subject: list[NoteEvent], candidate: list[NoteEvent], start: Fraction
+) -> Fraction:
+    """The onset of the first note whose spacing departs from the subject."""
+    wanted, got = rhythm_profile(subject), rhythm_profile(candidate)
+    for index, (want, have) in enumerate(zip(wanted, got, strict=False)):
+        if not within_tolerance(want, have):
+            return candidate[index].onset
+    return start
 
 
 def _rhythm_divergence(

@@ -185,7 +185,8 @@ class GeminiGenerator:
         payload = self._client_for(WRITE_MOTIFS_TOOL).call_tool(
             system_prompt=MOTIF_SYSTEM,
             user_prompt=build_motif_prompt(
-                ctx.briefs, ctx.spec, ctx.style, ctx.plan, ctx.feedback
+                ctx.briefs, ctx.spec, ctx.style, ctx.plan, ctx.feedback,
+                rejected=ctx.rejected,
             ),
             tool=write_motifs_schema(),
             turn=TurnInfo(label=WRITE_MOTIFS_TOOL, **_purpose_of(ctx.feedback)),

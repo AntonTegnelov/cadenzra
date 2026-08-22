@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from cadenzra.model.feedback import FeedbackItem
 from cadenzra.model.harmony import HarmonicSkeleton
 from cadenzra.model.lyrics import SectionLyricDirective, SectionLyrics
-from cadenzra.model.motif import Motif
+from cadenzra.model.motif import Motif, MotifLibrary
 from cadenzra.model.primitives.ids import VoiceId
 from cadenzra.model.primitives.meter import MeterSpec
 from cadenzra.model.spec import PieceSpec, VoiceSpec
@@ -67,6 +67,11 @@ class MotifContext(BaseModel, frozen=True):
     spec: PieceSpec
     style: StylePack
     plan: StructurePlan
+    # The library the last attempt produced, when it was rejected. A retry
+    # is an amendment: shown its own motifs, the model keeps the accepted
+    # ones — regenerating the whole library re-rolled a correct ostinato
+    # into a broken one while fixing its neighbour, eight live attempts.
+    rejected: MotifLibrary | None = None
     feedback: list[FeedbackItem] = Field(default_factory=list)
 
 
