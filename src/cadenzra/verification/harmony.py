@@ -68,8 +68,21 @@ def _check_order_and_gaps(
     """Events must run in order and leave no bar unharmonized."""
     feedback = []
     cursor = Fraction(0)
+    previous = None
     for event in sorted(skeleton.events, key=lambda item: item.offset):
         if event.offset > cursor:
+            # A gap flags no chord, and the retry prompt tells the model to
+            # change only flagged chords — live, a grid missing one beat
+            # came back verbatim six times. The gap names its own edit.
+            beat = section.meter.bar_length / section.meter.units_per_bar
+            beats = (event.offset - cursor) / beat
+            count = f"{beats} beat{'' if beats == 1 else 's'}"
+            fix = (
+                f"; extend the {previous.chord} at "
+                f"{format_bar_beat(previous.offset, section.meter)} by {count}"
+                if previous is not None
+                else "; start the first chord at bar 1, beat 1"
+            )
             feedback.append(
                 _item(
                     section,
@@ -79,6 +92,7 @@ def _check_order_and_gaps(
                         f"{format_bar_beat(cursor, section.meter)} and "
                         f"{format_bar_beat(event.offset, section.meter)}; the "
                         "progression must be gapless"
+                        + fix
                     ),
                 )
             )
@@ -94,6 +108,8 @@ def _check_order_and_gaps(
                     ),
                 )
             )
+        if previous is None or event.end > previous.end:
+            previous = event
         cursor = max(cursor, event.end)
     return feedback
 
