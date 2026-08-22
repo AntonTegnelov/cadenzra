@@ -529,10 +529,12 @@ def test_a_held_clash_inside_a_prescribed_entry_is_unfixable_at_voice_level() ->
             MaterialEntry(motif_id="upper_subject", voice_id="soprano", bar=1, relation="exact")
         ],
     )
-    # Eb (75) is not in C; the soprano's first note is prescribed by its entry.
-    # The bass stays on chord tones so the only clash is the prescribed one.
-    voices = _voices(soprano=[75, 74, 76, 77], bass=[48, 52, 55, 48])
-    motifs = {"upper_subject": _voices(m=[75, 74, 76, 77])["m"]}
+    # Eb (75) is not in C; the soprano's first note is prescribed by its
+    # entry, and the leap to G that follows resolves nothing — a stepwise
+    # continuation would read as a suspension and rightly pass. The bass
+    # stays on chord tones so the only clash is the prescribed one.
+    voices = _voices(soprano=[75, 79, 76, 77], bass=[48, 52, 55, 48])
+    motifs = {"upper_subject": _voices(m=[75, 79, 76, 77])["m"]}
 
     feedback = validate_section(
         voices, section, _skeleton("C", "C", "C", "C"), _style("allow"), motifs
@@ -650,4 +652,42 @@ def test_a_held_black_key_is_warned_against_enharmonic_respelling() -> None:
     assert held, "a sustained non-chord tone must be flagged"
     assert "same sounding note" in held[0].message, (
         "fis and ges must be named as one pitch, or the model respells forever"
+    )
+
+
+def _voice_of(pairs: list[tuple[int, int]]) -> dict[VoiceId, list[NoteEvent]]:
+    """One voice from (midi_pitch, quarters) pairs."""
+    midi = mido.MidiFile(ticks_per_beat=TICKS)
+    track = mido.MidiTrack()
+    track.name = "staff:soprano"
+    midi.tracks.append(track)
+    for pitch, quarters in pairs:
+        track.append(mido.Message("note_on", channel=0, note=pitch, velocity=90, time=0))
+        track.append(
+            mido.Message("note_off", channel=0, note=pitch, velocity=0, time=TICKS * quarters)
+        )
+    return extract_voice_notes(midi)
+
+
+def test_a_held_tone_that_resolves_by_step_is_a_suspension_not_a_fault() -> None:
+    """Orchestra, live: told 'resolve it by step', the model held its F for
+    half the bar and stepped to E — the message's own prescription — and the
+    check flagged the F again, three identical sweeps. A held clash whose
+    next note steps onto the chord is what the message asked for; the check
+    must accept what it teaches."""
+    resolved = _voice_of([(71, 2), (72, 2)])  # B held, resolving up to C
+
+    feedback = validate_section(
+        resolved, _section(), _skeleton("C", "C", "C", "C"), _style()
+    )
+    assert [i for i in feedback if i.kind == "held_tone"] == [], (
+        "hold-then-step-to-chord-tone is a resolved suspension"
+    )
+
+    unresolved = _voice_of([(71, 2), (67, 2)])  # B held, leaping away
+    feedback = validate_section(
+        unresolved, _section(), _skeleton("C", "C", "C", "C"), _style()
+    )
+    assert [i for i in feedback if i.kind == "held_tone"], (
+        "a leap away explains nothing; the clash stays flagged"
     )

@@ -473,6 +473,12 @@ def _check_harmonic_alignment(
                 sounding = min(note.end, event.end) - max(note.onset, event.offset)
                 if sounding < threshold:
                     continue
+                if _resolves_by_step(note, notes, skeleton, strict):
+                    # Hold-then-step-onto-the-chord is the message's own
+                    # prescription ("resolve it by step") — a live model
+                    # obeyed it and was flagged three identical sweeps
+                    # running. A resolved suspension is an explained clash.
+                    continue
                 # A held clash inside the voice's own prescribed entry is the
                 # subject clashing with the grid — the plan's contradiction,
                 # unfixable by the voice, so it carries no routed target.
@@ -496,6 +502,41 @@ def _check_harmonic_alignment(
                     )
                 )
     return feedback
+
+
+def _resolves_by_step(
+    note: NoteEvent,
+    voice: list[NoteEvent],
+    skeleton: HarmonicSkeleton,
+    strict: bool,
+) -> bool:
+    """Whether the very next note steps onto the chord sounding under it.
+
+    Decidable arithmetic, not taste: the held-tone message commands "resolve
+    it by step", so this is the check accepting exactly what it teaches. The
+    resolution is judged against the chord at the *next* note's onset — a
+    suspension classically resolves as or after the harmony moves.
+    """
+    following = [
+        candidate
+        for candidate in voice
+        if candidate.onset >= note.end - TICK_TOLERANCE
+        and candidate is not note
+    ]
+    if not following:
+        return False
+    resolution = min(following, key=lambda candidate: candidate.onset)
+    if abs(resolution.midi_pitch - note.midi_pitch) > 2:
+        return False
+    for event in skeleton.events:
+        if event.offset - TICK_TOLERANCE <= resolution.onset < event.end:
+            try:
+                chord = parse_chord_symbol(event.chord)
+            except ChordSymbolError:
+                return False  # the harmony validator owns unreadable chords
+            permitted = permitted_pitch_classes(chord, strict)
+            return resolution.midi_pitch % 12 in permitted
+    return False
 
 
 def _check_material_entries(
