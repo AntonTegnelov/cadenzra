@@ -653,3 +653,17 @@ def test_no_bar_checks_means_no_paraphrase_to_give() -> None:
     from cadenzra.verification.motifs import _bar_check_reason
 
     assert _bar_check_reason([], SEVEN_EIGHT) is None
+
+
+def test_a_short_progression_names_the_final_chord_edit() -> None:
+    """Longform, live: a grid one bar short of its section drew 'must add
+    up to exactly the section length' seven verbatim attempts — the tail
+    gap flags no chord, and the amendment prompt says change only flagged
+    chords. The edit is named with absolute numbers, like the mid-grid
+    gap's."""
+    skeleton = _skeleton(("Dm", Fraction(0), Fraction(7, 8)))  # 1 of 2 bars
+
+    feedback = validate_harmony(skeleton, SHORT)
+
+    (item,) = [i for i in feedback if "must add up" in i.message]
+    assert "give the final Dm at bar 1, beat 1 a duration of 14 beats (it has 7)" in item.message

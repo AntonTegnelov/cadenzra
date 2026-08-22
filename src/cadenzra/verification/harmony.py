@@ -128,6 +128,27 @@ def _check_total_length(
     if span == expected:
         return []
     bars_covered = span / section.meter.bar_length
+    # The tail sibling of the mid-grid gap: it flags no chord either, and
+    # the amendment prompt says change only flagged chords — a grid one bar
+    # short came back verbatim seven live attempts. The edit is named with
+    # absolute numbers, the lesson the mid-grid message already learned.
+    fix = ""
+    if skeleton.events and span < expected:
+        beat = section.meter.bar_length / section.meter.units_per_bar
+        last = max(skeleton.events, key=lambda event: event.end)
+        target = (expected - last.offset) / beat
+        has = (last.end - last.offset) / beat
+        fix = (
+            f"; one way: give the final {last.chord} at "
+            f"{format_bar_beat(last.offset, section.meter)} a duration of "
+            f"{target} beats (it has {has})"
+        )
+    elif skeleton.events:
+        last = max(skeleton.events, key=lambda event: event.end)
+        fix = (
+            f"; the excess is at the end — shorten or remove chords after "
+            f"{format_bar_beat(expected, section.meter)}"
+        )
     return [
         _item(
             section,
@@ -135,7 +156,7 @@ def _check_total_length(
                 f"the progression covers {_bars_text(bars_covered)} but section "
                 f"{section.section_id} is {section.bars} bars of "
                 f"{section.meter.surface_string()}; the chord durations must add up "
-                "to exactly the section length"
+                "to exactly the section length" + fix
             ),
         )
     ]
