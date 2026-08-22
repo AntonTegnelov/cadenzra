@@ -517,10 +517,14 @@ def _open_prefix_faults(
         bars = split_bars(part.lily_music)
         if not prefix or open_bar > len(bars):
             continue  # the bar-count check owns a short part
+        # Dynamics ride the notes ("d8\\mp") or stand alone ("\\f") — the
+        # contract demands they be printed, so they must not fail the
+        # comparison: a faithful copy with one suffixed \\mp was rejected
+        # six live attempts running.
         written = [
-            token
+            bare
             for token in bars[open_bar - 1].split()
-            if not token.startswith("\\")
+            if (bare := token.split("\\")[0])
         ]
         if written[: len(prefix)] != prefix:
             begins = " ".join(written[: len(prefix)])

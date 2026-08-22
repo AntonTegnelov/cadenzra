@@ -1033,6 +1033,10 @@ def test_the_open_bar_must_begin_with_its_prescribed_tokens_verbatim() -> None:
 
     faithful = VoicePart(
         section_id="A", voice_id="cello",
-        lily_music="\\f d8 a8 d8 a8 f8 g8 a8 a8 |",
+        lily_music="\\f d8\\mp a8 d8 a8 f8 g8 a8 a8 |",
     )
-    assert _open_prefix_faults(faithful, [instruction], section) == []
+    assert _open_prefix_faults(faithful, [instruction], section) == [], (
+        "game-score, live: a suffixed dynamic (d8\\mp) failed a faithful "
+        "copy six attempts running - the contract demands dynamics be "
+        "printed, so they must not fail the comparison"
+    )
