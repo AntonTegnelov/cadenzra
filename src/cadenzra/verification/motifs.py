@@ -123,7 +123,9 @@ def validate_motifs(
                         f"keep it to {MAX_MOTIF_NOTES} or fewer, a phrase of one to "
                         "four bars. Every entry has to be written out exactly, and a "
                         "long line is neither reproducible nor recognizable when it "
-                        "returns"
+                        "returns. Each bar must still fill the meter: for a "
+                        "running-16ths idea, mix in eighths (each 8 replaces two "
+                        "16s) until the count fits"
                     ),
                 )
             )
