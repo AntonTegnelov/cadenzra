@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Cadenzra composes complete musical works with AI, where the primary artifact is **correct sheet music** and audio is derived from it. This inverts the common approach (audio-first tools like Suno, from which notation is nearly unrecoverable): here the score *is* the source of truth, and everything else — MIDI, audio — is compiled from it. Sheet music and audio can never disagree, because they are renderings of one text file.
+Cadenzra is a tool for musicians: it uses AI to support the creative process by drafting complete musical works whose primary artifact is **correct sheet music** — notation a musician can rehearse from, edit, and build on — with audio derived from it. This inverts the common approach (audio-first tools like Suno, which hand a musician a recording from which notation is nearly unrecoverable): here the score *is* the source of truth, and everything else — MIDI, audio — is compiled from it. Sheet music and audio can never disagree, because they are renderings of one text file.
+
+The division of labor is deliberate and runs through the whole design: the system owns the mechanical guarantees (bars that fill their meters, parts inside their ranges, themes that verifiably return), and the musician owns the music. Validators decide arithmetic, never taste; the final judgment on whether a draft is any good — and everything downstream of the draft, from real performance to rewriting half of it — belongs to the human.
 
 ## Hard requirements
 
@@ -47,4 +49,4 @@ A Tool-inspired work for SATB choir: shifting odd meters, modal harmony (Lydian/
 
 ## Constraints & context
 
-The implementation is Python. Orchestration is LangGraph — chosen because the design's core mechanic is *conditional feedback loops between many nodes*, which is exactly the shape LangGraph models well; a linear script would reimplement half of it badly. Generation LLMs and the audio-critique LLM are accessed through provider-agnostic protocols ([06](06-boundaries-llm-and-rendering.md)); the initial wiring uses Claude for text/notation generation and Gemini for audio understanding, but nothing outside the client adapters knows that.
+The implementation is Python. Orchestration is LangGraph — chosen because the design's core mechanic is *conditional feedback loops between many nodes*, which is exactly the shape LangGraph models well; a linear script would reimplement half of it badly. Generation LLMs and the audio-critique LLM are accessed through provider-agnostic protocols ([06](06-boundaries-llm-and-rendering.md)); the initial wiring uses Claude for text/notation generation and Gemini for audio understanding, but nothing outside the client adapters knows that. (*Corrected in implementation:* Gemini backs both roles in v1 — `GeminiGenerator` and `GeminiCritic` in `llm/services/` — which is itself a demonstration of the boundary: the swap touched no pipeline code.)

@@ -1,18 +1,70 @@
 # Cadenzra
 
-Cadenzra composes complete musical works with AI, where the primary artifact is
-**correct sheet music** and audio is derived from it. This inverts the common
-approach — audio-first tools, from which notation is nearly unrecoverable. Here
-the score *is* the source of truth, and everything else is compiled from it, so
-sheet music and audio can never disagree.
+Cadenzra is a tool for musicians who want AI support in their creative process
+without giving up the score. You describe a piece — the ensemble and its
+ranges, the meters, the style, the length — and it drafts real, engraved sheet
+music: something you can rehearse from, mark up, rewrite, and make your own.
+The AI does the sketching; the musical judgment stays with you.
 
 ```bash
 cadenzra compose tool-choir
 ```
 
-Out comes a PDF score, the LilyPond source it was engraved from, score MIDI,
-an interpreted performance MIDI, and audio — five artifacts that agree because
-they descend from one text file.
+Out comes a PDF score, the LilyPond source it was engraved from, score MIDI, an
+interpreted performance MIDI, and audio so you can hear the draft — five
+artifacts that always agree, because they all descend from one notation file.
+
+## Notation first
+
+Most AI music tools are audio-first: you get a recording, and the notation —
+the thing a musician actually works with — is nearly unrecoverable from it.
+Cadenzra inverts that. The score is the source of truth and everything else is
+compiled from it, so what you hear is exactly what is on the page. The LilyPond
+source is yours: change a phrase, re-engrave, re-render, and score and audio
+can never disagree.
+
+## A draft you can trust
+
+A plausible-looking but wrong score wastes a rehearsal. So Cadenzra
+machine-checks every draft before handing it over: every bar fills its declared
+meter (decided by LilyPond's own bar checks), every note stays inside the range
+you declared for each voice or singer, and material the plan says returns — a
+fugue subject, a riff — verifiably returns, checked against the compiled music
+itself. When the system can't produce a correct result, it says so and stops,
+leaving everything it produced for inspection. It never pads a bar, transposes
+away a range violation, or silently drops a section to force completion.
+
+What the checks deliberately do *not* decide is taste. Validators check
+arithmetic, ranges, and declared relationships; whether the music is any good
+is a judgment the tool leaves where it belongs — with you.
+
+## What it can take on
+
+- **Odd, shifting, and additive meters** — 5/4, 7/8 with explicit groupings
+  (2+2+3 vs 3+2+2), 3/4+1/8, meter changes between sections. Irregular meter is
+  where AI-written notation most often breaks, so the whole pipeline is built
+  around getting it right.
+- **Any style, as data.** Style enters as a free-text prompt that is
+  interpreted once into concrete idioms, rhythmic cells, and constraints. The
+  built-in specs range from a Tool-inspired SATB choral piece through fugues,
+  minimalism, orchestra, metal, and synthwave — none has a code path of its own.
+- **Long-form structure.** Pieces are planned top-down — form, then harmony,
+  then voices — so sections relate and themes return instead of the music
+  wandering.
+- **Lyrics that hold together.** Words are written per section, for all singing
+  voices in one pass, after the music exists — fitted to the notes, coordinated
+  across parts, with rhyme schemes and refrains checked.
+- **Audio you can evaluate.** A deterministic performance stage turns the score
+  into a shaped rendering — continuous dynamics so a held-chord crescendo is
+  audible, not merely printed.
+
+## Where you come in
+
+The rendered audio is a compositional proof, not a production track — FluidSynth
+with a General MIDI SoundFont sounds synthetic on purpose. The real performance
+is yours: hand the PDF to your choir, pull the MIDI into your DAW under real
+instruments, or treat the whole draft as the sketch your piece grows out of.
+Cadenzra's job ends where the interesting work begins.
 
 ## How it works
 
@@ -36,10 +88,19 @@ micro-timing will live — which is why a held-chord crescendo is audible rather
 than merely printed, and why "sounds stiff" costs a re-render instead of a
 rewrite.
 
+## Describing a piece
+
+A piece is a `PieceSpec`: the voices with their kinds and ranges, the meters the
+plan may use, a free-text style prompt, a target duration, and a lyric language
+if anything sings. The built-in specs live in
+[src/cadenzra/app/specs.py](src/cadenzra/app/specs.py) — `smoke` is the small,
+fast one; `tool-choir` is the full choral commission. Describing your own piece
+is adding a spec there.
+
 ## Documentation
 
 The design is documented in full under [docs/](docs/), best read in order.
-[01 — Vision & Scope](docs/01-vision-and-scope.md) states what the system is for
+[01 — Vision & Scope](docs/01-vision-and-scope.md) states what the tool is for
 and what it deliberately does not do; [08 — Engineering
 Principles](docs/08-engineering-principles.md) is the shortest route to how the
 code is meant to be written.

@@ -27,7 +27,7 @@ class FeedbackRouter(Protocol):
     def localize(self, verdict: CritiqueVerdict, plan: StructurePlan) -> list[FeedbackItem]: ...
 ```
 
-Protocols express **musical intent, not transport** — `generate_voice`, not `complete_prompt`. Prompt construction is an implementation detail of the adapter, which means swapping providers (or inserting a fine-tuned model for one method only) is invisible above the boundary. Initial wiring: `ClaudeGenerator` implements `GeneratorLLM`, `GeminiCritic` implements `AudioCritic` and backs `FeedbackRouter.localize`; both SDKs are imported nowhere else.
+Protocols express **musical intent, not transport** — `generate_voice`, not `complete_prompt`. Prompt construction is an implementation detail of the adapter, which means swapping providers (or inserting a fine-tuned model for one method only) is invisible above the boundary. Initial wiring: `GeminiGenerator` implements `GeneratorLLM`, `GeminiCritic` implements `AudioCritic` and backs `FeedbackRouter.localize`; the vendor SDK is imported nowhere else. (*Corrected in implementation:* this doc originally named `ClaudeGenerator`; v1 wires Gemini for both roles — see `llm/services/` and `app/factory.py`.)
 
 `ScoreRenderer.compile` serving both fragment validation (scaffolded compiles) and final rendering is intentional — one boundary, one behavior, exercised constantly rather than only at the end of a run.
 

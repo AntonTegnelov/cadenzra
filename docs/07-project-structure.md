@@ -21,7 +21,7 @@ cadenzra/
 │   │   ├── schemas/                # tool-call schemas (surface-shaped)
 │   │   ├── parsers/                # surface → internal: the only place LLM output
 │   │   │                           #   is parsed/validated/normalized
-│   │   └── services/               # ClaudeGenerator, GeminiCritic (implement protocols)
+│   │   └── services/               # GeminiGenerator, GeminiCritic (implement protocols)
 │   ├── notation/
 │   │   ├── assemble.py             # pure: fragments + plan → section/score LilyPond;
 │   │   │                           #   owns the one-voice-one-channel invariant
