@@ -1,5 +1,5 @@
 #!/bin/sh
-# Entrypoint for the resume_manager dev container.
+# Entrypoint for the cadenzra dev container.
 # Runs under tini (compose init: true). Installs authorized_keys from the
 # host bind mount, generates persistent host keys, then execs sshd.
 set -eu

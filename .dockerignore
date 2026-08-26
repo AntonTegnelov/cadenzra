@@ -1,13 +1,10 @@
 .git
 .venv
 .env
+.env.*
 .mypy_cache
 .ruff_cache
 .pytest_cache
-.resume_build_temp
-.resume_output
 __pycache__
 **/__pycache__
-applications/
-
-logs/
+out/

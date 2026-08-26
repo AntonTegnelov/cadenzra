@@ -1,4 +1,4 @@
-# Hardened sshd config for the resume_manager dev container.
+# Hardened sshd config for the cadenzra dev container.
 # Loaded via /etc/ssh/sshd_config.d/00-dev.conf (overrides defaults).
 
 Port 22

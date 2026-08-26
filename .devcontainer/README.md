@@ -1,23 +1,24 @@
-# resume_manager dev container
+# cadenzra dev container
 
-An SSH-reachable Linux dev box for resume_manager, following the same pattern
-as the other projects in this folder (vetdux 2222, quirefold 2223,
-vetdux_marketing 2224, tallynix 2225 — **this one uses port 2226**).
+An SSH-reachable Linux dev box carrying the whole toolchain, exposed on host
+port **2227**.
 
 ## What's inside
 
 | Tool | Version / notes |
 |---|---|
-| Python | 3.13 (`python:3.13-slim-bookworm` base), venv at `/home/dev/.venv` on PATH |
-| TeX Live | xelatex + fontspec, fontawesome5, titlesec, Swedish babel, Lato font |
+| Python | 3.14 (`python:3.14-slim-bookworm` base), venv at `/home/dev/.venv` on PATH |
+| LilyPond | 2.26.0, pinned — its error-message format is parsed by `rendering/lilypond.py`, so bumping it means regenerating the captured-stderr fixtures (docs/09) |
+| FluidSynth | 2.5.7, built from source with libsndfile for `-F` WAV rendering |
+| SoundFont | Debian's `fluid-soundfont-gm` (General MIDI) |
+| uv | targets the container venv (`UV_PROJECT_ENVIRONMENT=/home/dev/.venv`) |
 | Node.js | 20 (NodeSource) |
 | Claude Code | latest, installed globally via npm |
-| Scraper browser deps | Xvfb + Firefox runtime libs (`playwright install-deps firefox`) + libegl1, for the `linkedin_scraper` track's stealth Firefox |
-| sshd | hardened: pubkey-only, no root, `dev` user only, host port **2226** |
+| sshd | hardened: pubkey-only, no root, `dev` user only, host port **2227** |
 
-The repo is bind-mounted at `/workspaces/resume_manager`, so edits sync both
-ways. The gitignored `.env` (Gemini API key) arrives via the mount — it is
-never baked into the image (`.dockerignore` keeps it out of the build context).
+The repo is bind-mounted at `/workspaces/cadenzra`, so edits sync both ways.
+The gitignored `.env` (Gemini API key) arrives via the mount — it is never
+baked into the image (`.dockerignore` keeps it out of the build context).
 
 ## One-time setup
 
@@ -37,58 +38,54 @@ changes only need `docker compose restart` — no rebuild.
 docker compose -f .devcontainer/docker-compose.yml up -d --build
 ```
 
-The first build downloads ~2 GB of TeX Live packages; later rebuilds reuse the
-cached layer. The container auto-restarts with Docker Desktop
-(`restart: unless-stopped`).
+The first build compiles FluidSynth from source and downloads LilyPond; later
+rebuilds reuse the cached layers. The container auto-restarts with Docker
+Desktop (`restart: unless-stopped`).
 
 Stop: `docker compose -f .devcontainer/docker-compose.yml down`
-(add `-v` to also wipe the Claude login and ssh host keys).
+(add `-v` to also wipe the persistent home volume and ssh host keys).
 
 ## Connect
 
 Add to `~/.ssh/config` on the host:
 
 ```
-Host resume-manager-dev
+Host cadenzra-dev
     HostName localhost
-    Port 2226
+    Port 2227
     User dev
 ```
 
-Then `ssh resume-manager-dev`, or point Claude Code Desktop / Cursor /
+Then `ssh cadenzra-dev`, or point Claude Code Desktop / Cursor /
 JetBrains Gateway at it. VS Code users can instead use
-"Dev Containers: Reopen in Container", which runs the project setup
-automatically via `postCreateCommand`.
+"Dev Containers: Reopen in Container", which runs `uv sync` automatically via
+`postCreateCommand`.
 
 ## First-login project setup (SSH users)
 
 ```bash
-cd /workspaces/resume_manager
-pip install -e '.[dev]'
-pre-commit install || test -x .git/hooks/pre-commit
+cd /workspaces/cadenzra
+uv sync --dev
 ```
 
-(`pre-commit install` writes the hook, then fails on a final `chmod` — a
-Docker Desktop bind-mount quirk where files are root-owned. The mount is
-world-executable, so the hook works; the `test -x` fallback confirms it.)
-
 `pip`/`python` resolve to the container venv at `/home/dev/.venv` (it's first
-on PATH via `/etc/environment`). The repo's `.venv/` directory is the
-**Windows** venv — never use it in the container. Sanity check:
+on PATH via `/etc/environment`). A `.venv/` directory in the repo is a
+**host-side** venv — never use it in the container. Sanity check:
 `which python` must print `/home/dev/.venv/bin/python`.
 
 ## Claude Code
 
 `claude` is preinstalled. Log in once (`claude` → follow the OAuth flow);
-credentials live on the `claude-config` named volume and survive rebuilds.
+credentials live on the persistent `home` volume and survive rebuilds.
 
 ## Troubleshooting
 
 - **`Permission denied (publickey)`** — check `%USERPROFILE%\.ssh\authorized_keys`
   contains your pubkey, then `docker compose -f .devcontainer/docker-compose.yml restart`.
 - **Host key changed after `down -v`** — the host-key volume was wiped; run
-  `ssh-keygen -R "[localhost]:2226"` on the host and reconnect.
-- **xelatex missing-font errors** — `fc-list | grep -i lato` should list Lato;
-  `kpsewhich fontawesome5.sty` should resolve.
-- **`resume-manager: command not found`** — run the first-login setup above;
-  the editable install lives in the container venv, not the image.
+  `ssh-keygen -R "[localhost]:2227"` on the host and reconnect.
+- **`cadenzra: command not found`** — run `uv sync --dev`; the editable
+  install lives in the container venv, not the image.
+- **LilyPond version assertion fails at startup** — the adapter pins the major
+  version (docs/06); rebuild the container rather than pointing at a system
+  LilyPond.

@@ -1,0 +1,12 @@
+# Real stability and security, not theater
+
+**Rule:** The goal for this codebase is to be **stable** (few bugs, crashes, or surprising behaviors) and **trustworthy** (never a plausible-looking but wrong score — the one output this system exists to prevent, because the human downstream trusts the artifact). Pursue the real thing. Reject "theater" — measures that *feel* rigorous but don't materially reduce real risk. Theater is not neutral: it adds code to read and reason about, and the obfuscation can make the system *less* stable, not more.
+
+**Why:** Real stability and security come from deeply understanding how the code works and how data flows through it — predicting where and why things can actually go wrong, and addressing those. They do not come from volume of defensive code. A guard against a condition that can't occur, a check duplicating one the type system already makes, or a security control for a threat outside the model — each looks responsible and buys nothing, while making the real logic harder to see. The larger and more cluttered the code, the harder it is to reason about, which is where actual bugs hide.
+
+**How to apply:**
+- Before adding any guard, check, retry, or control, ask: *what real failure does this prevent, and can it actually happen here?* If it can't happen, don't add it. Retrying a deterministic subprocess like LilyPond is the canonical example of theater; retrying the non-deterministic Gemini API is substance (docs/08).
+- Invest effort in understanding data flow — where untrusted input enters, where invariants are established, where state changes — over sprinkling checks along the way.
+- For the precise line on defensive code, this rule defers to [[fail-loud]]: inside our own code, let impossible states crash rather than masking them; at genuine system boundaries (external APIs, user input, deserialized payloads), validate, retry, log, and surface failure. That distinction *is* the substance-vs-theater test for error handling — apply it.
+- The same applies to verification: a check should decide something real — arithmetic, ranges, declared relationships — that can actually be wrong. A validator that duplicates a check the compiler already makes, or that legislates musical taste (docs/01 rules out a theory engine), is verification theater — cut it.
+- Simpler code is usually more stable and more auditable than heavily-guarded code (see [[keep-it-simple]]). When robustness and simplicity seem to conflict, it's often because the "robustness" is theater.

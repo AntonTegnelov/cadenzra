@@ -1,0 +1,14 @@
+# LLM calls use forced tool calls, parsed only in `llm/parsers`
+
+**Rule:** Every LLM invocation goes through the `GeneratorLLM` / `AudioCritic` protocols and returns structured data via forced Gemini tool calling (`GeminiClient.call_tool`, mode `ANY`; schemas in `llm/schemas/`), normalized into internal types only in `llm/parsers/`. Pipeline code (graph nodes, `verification/`, `notation/`, CLI) never sees raw LLM text and never parses it.
+
+**Why:** Tool-call outputs are validated before they reach the pipeline. You get typed access, and the failure mode is a clean `LLMOutputError` handled by the client's bounded retry — instead of a half-parsed dict propagating into a score the human downstream will trust. Keeping all parsing in `llm/parsers/` means prompt or schema drift breaks in one visible place, and it is the *only* place the musician surface (bars, beats, note names) becomes internal values (`Fraction` offsets, `MeterSpec`, pitch objects) — a `Fraction` in a prompt or schema is a bug (CLAUDE.md).
+
+**How to apply:**
+- New LLM capability = four pieces in the `llm` package, always all four: a prompt builder in `prompts/`, a tool schema in `schemas/`, a parser in `parsers/`, and a method on the protocol implemented by `GeminiGenerator` (or `GeminiCritic`). `generate_voice` — `prompts/voice.py`, `schemas/voice.py` (`write_part_schema`), `parsers/voice.py` (`parse_voice_part`) — is the pattern.
+- Parsers raise `LLMOutputError` on anything missing or unrecognizable — never return a coerced default (see [[fail-loud]]). Where a payload maps onto a Pydantic model (e.g. `TechniqueSpan`), validate with it and wrap the `ValidationError`.
+- No `json.loads` or regex extraction outside `llm/parsers/`. There is no text-fallback extraction: tool calling is forced, so a reply without a tool call is an `LLMOutputError` handled by the retry loop, never something to scrape JSON out of.
+- Schemas and prompts are surface-shaped: bars, beats, note names, chord symbols, textbook LilyPond. Show only what the piece needs — capability gating like `write_part_schema(lyrics=..., techniques=...)` keeps unused fields out of the surface entirely (docs/04).
+- Parsers judge shape, not music. A fragment that parses is only well-shaped; whether it is well-formed music is the compiler's and the deterministic validators' answer — duplicating that in a parser is the same guard in two places (docs/08). The surface may be forgiving (normalize a missing `\lyricmode` wrapper), but never inventive (default a missing field).
+- Layers that retry must feed their rejection reasons into the next prompt (`feedback: list[FeedbackItem]` parameters on the protocol) — there is a test asserting this. A new capability with a retry loop needs the same plumbing.
+- No prompt text that says "respond with JSON matching this schema: ..." — the tool-calling machinery handles that.
