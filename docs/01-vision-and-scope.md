@@ -4,7 +4,9 @@
 
 Cadenzra is a tool for musicians: it uses AI to support the creative process by drafting complete musical works whose primary artifact is **correct sheet music** — notation a musician can rehearse from, edit, and build on — with audio derived from it. This inverts the common approach (audio-first tools like Suno, which hand a musician a recording from which notation is nearly unrecoverable): here the score *is* the source of truth, and everything else — MIDI, audio — is compiled from it. Sheet music and audio can never disagree, because they are renderings of one text file.
 
-The division of labor is deliberate and runs through the whole design: the system owns the mechanical guarantees (bars that fill their meters, parts inside their ranges, themes that verifiably return), and the musician owns the music. Validators decide arithmetic, never taste; the final judgment on whether a draft is any good — and everything downstream of the draft, from real performance to rewriting half of it — belongs to the human.
+The division of labor is deliberate and runs through the whole design: the system owns the mechanical guarantees (bars that fill their meters, parts inside their ranges, themes that verifiably return), and the musician owns the music. Validators decide arithmetic, never taste.
+
+**The long-term direction is delegation control.** The AI should be capable of taking a piece from concept to final product end to end, but the tool exists so the musician delegates exactly the steps they don't want to own — compose but not perform, tweak every concept the AI proposes, or hand over a skeleton to be fleshed out. That requires every layer's artifact — plan, harmony, voices, score, performance, and eventually production in a DAW stage (homebrewed or an open-source one such as openDAW or Ardour, possibly forked) — to be manually editable, with the pipeline rebuilding what's downstream of an edit. v1 implements the batch pipeline; the editing surfaces and the DAW stage are unbuilt (WIP).
 
 ## Hard requirements
 
@@ -34,7 +36,7 @@ A Tool-inspired work for SATB choir: shifting odd meters, modal harmony (Lydian/
 
 **Irrational meters.** Time signatures with non-power-of-two denominators (e.g. 4/3) are a poorly-supported LilyPond hack. Foreclosed. (Additive and compound meters are *in* scope — see requirements.)
 
-**Live or interactive performance.** The pipeline is batch: spec in, artifacts out. (A Strudel export could be added later as an alternative renderer behind the same boundary as FluidSynth; nothing is built for it now.)
+**Live or interactive performance.** The pipeline is batch: spec in, artifacts out. (A Strudel export could be added later as an alternative renderer behind the same boundary as FluidSynth; nothing is built for it now. Interactive *editing* of pipeline artifacts is a different matter — that is the roadmap, per Purpose above; live performance is not.)
 
 **A general music-theory engine.** Validators check specific, decidable properties (bar arithmetic, ranges, parallels, harmonic alignment, transposition relationships between motif entries). They do not attempt to formalize "good music." Aesthetic judgment stays with LLM critique nodes and, ultimately, the human reviewing the output.
 
