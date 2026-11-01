@@ -1,0 +1,17 @@
+[tools]
+python = "3.14"
+node = "20"
+uv = "0.13.6"
+"gitlab:lilypond/lilypond" = { version = "2.26.0", asset_pattern = "lilypond-*-linux-x86_64.tar.gz" }
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+
+[tasks.install]
+run = "uv sync"
+
+[tasks.test]
+run = "pytest"
+
+[tasks.run]
+run = "cadenzra"
